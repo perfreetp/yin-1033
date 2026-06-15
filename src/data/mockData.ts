@@ -417,7 +417,11 @@ export const mockVersions: Version[] = [
     createdAt: '2024-01-20T10:00:00Z',
     author: '张明',
     description: '初始版本，创建基础框架',
-    snapshot: { nodes: [], edges: [], lanes: [] },
+    snapshot: {
+      nodes: JSON.parse(JSON.stringify(mockCanvasNodes.slice(0, 4))),
+      edges: JSON.parse(JSON.stringify(mockCanvasEdges.slice(0, 3))),
+      lanes: JSON.parse(JSON.stringify(mockLanes.slice(0, 2))),
+    },
   },
   {
     id: 'ver-002',
@@ -425,7 +429,11 @@ export const mockVersions: Version[] = [
     createdAt: '2024-03-15T14:30:00Z',
     author: '李华',
     description: '新增复购运营和召回策略模块',
-    snapshot: { nodes: [], edges: [], lanes: [] },
+    snapshot: {
+      nodes: JSON.parse(JSON.stringify(mockCanvasNodes.slice(0, 7))),
+      edges: JSON.parse(JSON.stringify(mockCanvasEdges.slice(0, 6))),
+      lanes: JSON.parse(JSON.stringify(mockLanes)),
+    },
   },
   {
     id: 'ver-003',
@@ -433,7 +441,11 @@ export const mockVersions: Version[] = [
     createdAt: '2024-05-10T09:20:00Z',
     author: '王芳',
     description: '补充会员体系相关节点和指标',
-    snapshot: { nodes: [], edges: [], lanes: [] },
+    snapshot: {
+      nodes: JSON.parse(JSON.stringify(mockCanvasNodes.slice(0, 9))),
+      edges: JSON.parse(JSON.stringify(mockCanvasEdges.slice(0, 8))),
+      lanes: JSON.parse(JSON.stringify(mockLanes)),
+    },
   },
   {
     id: 'ver-004',
@@ -441,15 +453,30 @@ export const mockVersions: Version[] = [
     createdAt: '2024-06-05T16:45:00Z',
     author: '张明',
     description: '优化泳道布局，调整节点位置',
-    snapshot: { nodes: [], edges: [], lanes: [] },
+    snapshot: {
+      nodes: JSON.parse(JSON.stringify(mockCanvasNodes.slice(0, 9))).map((n: CanvasNode) => {
+        if (n.id === 'node-5') return { ...n, x: n.x + 20 };
+        if (n.id === 'node-7') return { ...n, y: n.y + 10 };
+        return n;
+      }),
+      edges: JSON.parse(JSON.stringify(mockCanvasEdges.slice(0, 8))),
+      lanes: JSON.parse(JSON.stringify(mockLanes)).map((l: Lane) => {
+        if (l.id === 'lane-2') return { ...l, size: l.size + 10 };
+        return l;
+      }),
+    },
   },
   {
     id: 'ver-005',
-    version: 'v1.4.0 (当前)',
+    version: 'v1.4.0',
     createdAt: '2024-06-10T11:30:00Z',
     author: '张明',
     description: '新增LTV指标节点，更新转化率数据',
-    snapshot: { nodes: [], edges: [], lanes: [] },
+    snapshot: {
+      nodes: JSON.parse(JSON.stringify(mockCanvasNodes)),
+      edges: JSON.parse(JSON.stringify(mockCanvasEdges)),
+      lanes: JSON.parse(JSON.stringify(mockLanes)),
+    },
   },
 ];
 

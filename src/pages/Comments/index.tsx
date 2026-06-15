@@ -5,6 +5,7 @@ import ProjectLayout from '@/components/Layout/ProjectLayout';
 import Button from '@/components/common/Button';
 import { mockComments, mockUsers } from '@/data/mockData';
 import { useProjectStore } from '@/store/useProjectStore';
+import { usePermissionLogStore } from '@/store/usePermissionLogStore';
 import type { Comment } from '@/types';
 import { cn, formatRelativeTime, generateId } from '@/utils/helpers';
 
@@ -82,33 +83,33 @@ function CommentItem({
               {renderContentWithMentions(comment.content)}
             </p>
             <div className="mt-3 flex items-center gap-2">
-              {!isViewer && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onReply(comment.id)}
-                  className="h-7 px-2 text-xs"
-                >
-                  <Reply className="w-3.5 h-3.5" />
-                  回复
-                </Button>
-              )}
-              {!isViewer && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onResolve(comment.id)}
-                  className={cn(
-                    "h-7 px-2 text-xs",
-                    comment.resolved
-                      ? "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                      : "text-slate-500"
-                  )}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  {comment.resolved ? '取消解决' : '标记解决'}
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onReply(comment.id)}
+                className={cn(
+                  "h-7 px-2 text-xs",
+                  isViewer && "opacity-60"
+                )}
+              >
+                <Reply className="w-3.5 h-3.5" />
+                回复
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onResolve(comment.id)}
+                className={cn(
+                  "h-7 px-2 text-xs",
+                  comment.resolved
+                    ? "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                    : "text-slate-500",
+                  isViewer && "opacity-60"
+                )}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {comment.resolved ? '取消解决' : '标记解决'}
+              </Button>
             </div>
           </div>
         </div>
@@ -137,6 +138,19 @@ export default function Comments() {
   const projects = useProjectStore(state => state.projects);
   const currentProject = useMemo(() => projects.find(p => p.id === id), [projects, id]);
   const isViewer = currentProject?.role === 'viewer';
+  const addPermissionLog = usePermissionLogStore(state => state.addLog);
+
+  const handlePermissionDenied = (action: string) => {
+    if (id && currentProject) {
+      addPermissionLog(id, {
+        userId: currentProject.ownerId,
+        userName: currentProject.ownerName,
+        userRole: currentProject.role,
+        action,
+      });
+    }
+    alert('您是查看者，没有权限执行此操作。如需编辑，请联系管理员。');
+  };
 
   const [comments, setComments] = useState<Comment[]>(mockComments);
   const [filter, setFilter] = useState<FilterType>('all');
@@ -284,11 +298,19 @@ export default function Comments() {
   };
 
   const handleReply = (commentId: string) => {
+    if (isViewer) {
+      handlePermissionDenied('尝试回复评论');
+      return;
+    }
     setReplyToId(commentId);
     textareaRef.current?.focus();
   };
 
   const handleResolve = (commentId: string) => {
+    if (isViewer) {
+      handlePermissionDenied('尝试解决评论');
+      return;
+    }
     setComments(prev => resolveComment(prev, commentId));
   };
 
@@ -434,12 +456,16 @@ export default function Comments() {
 
           <div className="flex-1 p-4 flex flex-col">
             {isViewer ? (
-              <div className="flex-1 flex items-center justify-center">
+              <div 
+                className="flex-1 flex items-center justify-center cursor-pointer"
+                onClick={() => handlePermissionDenied('尝试发表评论')}
+              >
                 <div className="text-center py-8 px-4">
                   <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3">
                     <Eye className="w-6 h-6 text-slate-400" />
                   </div>
                   <p className="text-sm text-slate-500">您是查看者，无法发表评论</p>
+                  <p className="text-xs text-slate-400 mt-1">点击查看权限说明</p>
                 </div>
               </div>
             ) : (

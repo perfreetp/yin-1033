@@ -516,23 +516,46 @@ export const useProjectCanvasStore = create<ProjectCanvasState>((set, get) => ({
   },
   
   restoreVersion: (versionId) => {
-    const { currentProjectId, projectVersions } = get();
-    if (!currentProjectId) return;
+    const { currentProjectId, projectVersions, projectCanvases } = get();
+    if (!currentProjectId) return null;
     
     const versions = projectVersions[currentProjectId] || [];
-    const version = versions.find(v => v.id === versionId);
-    if (!version) return;
+    const targetVersion = versions.find(v => v.id === versionId);
+    if (!targetVersion) return null;
+    
+    const currentVersion = versions[0];
+    const canvas = projectCanvases[currentProjectId] || defaultCanvas;
+    
+    const backupVersion: Version = {
+      id: generateId('ver'),
+      version: `备份 - ${currentVersion.version} - 恢复前`,
+      createdAt: new Date().toISOString(),
+      author: '我',
+      description: `恢复到 ${targetVersion.version} 前的自动备份`,
+      snapshot: {
+        nodes: JSON.parse(JSON.stringify(canvas.nodes)),
+        edges: JSON.parse(JSON.stringify(canvas.edges)),
+        lanes: JSON.parse(JSON.stringify(canvas.lanes)),
+      },
+    };
+    
+    set((state) => ({
+      projectVersions: {
+        ...state.projectVersions,
+        [currentProjectId]: [backupVersion, ...(state.projectVersions[currentProjectId] || [])],
+      },
+    }));
     
     set((state) => {
-      const canvas = state.projectCanvases[currentProjectId] || defaultCanvas;
+      const canvasData = state.projectCanvases[currentProjectId] || defaultCanvas;
       return {
         projectCanvases: {
           ...state.projectCanvases,
           [currentProjectId]: {
-            ...canvas,
-            nodes: JSON.parse(JSON.stringify(version.snapshot.nodes)),
-            edges: JSON.parse(JSON.stringify(version.snapshot.edges)),
-            lanes: JSON.parse(JSON.stringify(version.snapshot.lanes)),
+            ...canvasData,
+            nodes: JSON.parse(JSON.stringify(targetVersion.snapshot.nodes)),
+            edges: JSON.parse(JSON.stringify(targetVersion.snapshot.edges)),
+            lanes: JSON.parse(JSON.stringify(targetVersion.snapshot.lanes)),
           },
         },
         selectedNodeId: null,
@@ -540,6 +563,8 @@ export const useProjectCanvasStore = create<ProjectCanvasState>((set, get) => ({
       };
     });
     get().pushHistory();
+    
+    return backupVersion;
   },
   
   loadSnapshot: (nodes, edges, lanes) => {

@@ -22,6 +22,7 @@ import {
 import ProjectLayout from '@/components/Layout/ProjectLayout';
 import { useProjectCanvasStore } from '@/store/useProjectCanvasStore';
 import { useProjectStore } from '@/store/useProjectStore';
+import { usePermissionLogStore } from '@/store/usePermissionLogStore';
 import { cn, getNodeColors, exportPNG } from '@/utils/helpers';
 import type { NodeType, UserRole } from '@/types';
 
@@ -83,6 +84,19 @@ export default function CanvasPage() {
   const currentProject = projects.find(p => p.id === projectId);
   const userRole: UserRole = currentProject?.role || 'viewer';
   const isViewer = userRole === 'viewer';
+  const addPermissionLog = usePermissionLogStore(state => state.addLog);
+
+  const handlePermissionDenied = (action: string) => {
+    if (projectId && currentProject) {
+      addPermissionLog(projectId, {
+        userId: currentProject.ownerId,
+        userName: currentProject.ownerName,
+        userRole: currentProject.role,
+        action,
+      });
+    }
+    alert('您是查看者，没有权限执行此操作。如需编辑，请联系管理员。');
+  };
 
   const nodes = useMemo(() => getNodes(), [getNodes, projectId, zoom, panX, panY, selectedNodeId]);
   const edges = useMemo(() => getEdges(), [getEdges, projectId, zoom, panX, panY, selectedEdgeId]);
@@ -585,17 +599,37 @@ export default function CanvasPage() {
         <div className="h-12 bg-white border-b border-slate-200 flex items-center justify-between px-4">
           <div className="flex items-center gap-1">
             <button
-              onClick={undo}
-              disabled={historyIndex <= 0 || isViewer}
-              className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => {
+                if (isViewer) {
+                  handlePermissionDenied('尝试撤销操作');
+                } else {
+                  undo();
+                }
+              }}
+              disabled={historyIndex <= 0 && !isViewer}
+              className={cn(
+                "p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors",
+                (historyIndex <= 0 && !isViewer) && "opacity-40 cursor-not-allowed",
+                isViewer && "opacity-60"
+              )}
               title="撤销 (Ctrl+Z)"
             >
               <Undo2 className="w-4 h-4" />
             </button>
             <button
-              onClick={redo}
-              disabled={historyIndex >= historyLength - 1 || isViewer}
-              className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => {
+                if (isViewer) {
+                  handlePermissionDenied('尝试重做操作');
+                } else {
+                  redo();
+                }
+              }}
+              disabled={historyIndex >= historyLength - 1 && !isViewer}
+              className={cn(
+                "p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors",
+                (historyIndex >= historyLength - 1 && !isViewer) && "opacity-40 cursor-not-allowed",
+                isViewer && "opacity-60"
+              )}
               title="重做 (Ctrl+Shift+Z)"
             >
               <Redo2 className="w-4 h-4" />
@@ -637,10 +671,21 @@ export default function CanvasPage() {
           </div>
           
           <div className="flex items-center gap-2">
-            {selectedNodeId && !isViewer && (
+            {selectedNodeId && (
               <button
-                onClick={handleDelete}
-                className="p-2 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                onClick={() => {
+                  if (isViewer) {
+                    handlePermissionDenied('尝试删除节点');
+                  } else {
+                    handleDelete();
+                  }
+                }}
+                className={cn(
+                  "p-2 rounded-lg transition-colors",
+                  isViewer 
+                    ? "text-slate-400 opacity-60" 
+                    : "text-rose-500 hover:text-rose-600 hover:bg-rose-50"
+                )}
                 title="删除 (Delete)"
               >
                 <Trash2 className="w-4 h-4" />
@@ -657,10 +702,7 @@ export default function CanvasPage() {
         </div>
 
         <div className="flex-1 flex overflow-hidden">
-          <div className={cn(
-            "w-16 bg-white border-r border-slate-200 flex flex-col items-center py-3 gap-1",
-            isViewer && "opacity-50 pointer-events-none"
-          )}>
+          <div className="w-16 bg-white border-r border-slate-200 flex flex-col items-center py-3 gap-1">
             {toolbarItems.map((item) => {
               const Icon = item.icon;
               return (
@@ -669,11 +711,18 @@ export default function CanvasPage() {
                   draggable={!isViewer}
                   onDragStart={(e) => handleDragStart(e, item.type)}
                   onDragEnd={() => setDraggedItem(null)}
+                  onClick={() => {
+                    if (isViewer) {
+                      handlePermissionDenied(`尝试添加${item.label}节点`);
+                    }
+                  }}
                   className={cn(
-                    "w-12 h-12 flex flex-col items-center justify-center rounded-lg text-slate-600 hover:text-indigo-600 transition-colors group",
-                    !isViewer && "cursor-grab active:cursor-grabbing hover:bg-slate-50"
+                    "w-12 h-12 flex flex-col items-center justify-center rounded-lg text-slate-600 transition-colors group",
+                    !isViewer 
+                      ? "cursor-grab active:cursor-grabbing hover:bg-slate-50 hover:text-indigo-600"
+                      : "cursor-pointer opacity-60 hover:opacity-80"
                   )}
-                  title={`${item.label}（拖拽到画布）`}
+                  title={isViewer ? item.label : `${item.label}（拖拽到画布）`}
                 >
                   <Icon className="w-5 h-5 mb-0.5" />
                   <span className="text-[10px]">{item.label}</span>
@@ -922,15 +971,24 @@ export default function CanvasPage() {
                     </div>
                   </div>
                   
-                  {!isViewer && (
-                    <button
-                      onClick={handleDelete}
-                      className="w-full py-2 text-sm text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors flex items-center justify-center gap-2"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      删除节点
-                    </button>
-                  )}
+                  <button
+                    onClick={() => {
+                      if (isViewer) {
+                        handlePermissionDenied('尝试删除节点');
+                      } else {
+                        handleDelete();
+                      }
+                    }}
+                    className={cn(
+                      "w-full py-2 text-sm rounded-lg transition-colors flex items-center justify-center gap-2",
+                      isViewer
+                        ? "text-slate-400 bg-slate-50 opacity-60"
+                        : "text-rose-600 bg-rose-50 hover:bg-rose-100"
+                    )}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    删除节点
+                  </button>
                 </div>
               ) : (
                 <div className="text-center py-8">

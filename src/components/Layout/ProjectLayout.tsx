@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -14,12 +14,16 @@ import {
   User,
   Shield,
   Eye,
-  Edit3
+  Edit3,
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
 import { useProjectCanvasStore } from '@/store/useProjectCanvasStore';
-import { cn } from '@/utils/helpers';
+import { usePermissionLogStore } from '@/store/usePermissionLogStore';
+import { cn, formatDate, formatRelativeTime } from '@/utils/helpers';
 import type { UserRole } from '@/types';
+import Modal from '@/components/common/Modal';
 
 const projectNavItems = [
   { path: 'canvas', label: '画布', icon: Palette },
@@ -40,11 +44,17 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const { id } = useParams<{ id: string }>();
   const { projects, setCurrentProjectId } = useProjectStore();
   const { initProjectCanvas } = useProjectCanvasStore();
+  const { getLogs } = usePermissionLogStore();
+  
+  const [isPermissionLogModalOpen, setIsPermissionLogModalOpen] = useState(false);
   
   const currentProject = projects.find(p => p.id === id);
   const userRole: UserRole = currentProject?.role || 'viewer';
   const roleInfo = roleConfig[userRole];
   const RoleIcon = roleInfo.icon;
+  const isAdmin = userRole === 'admin';
+  
+  const permissionLogs = id ? getLogs(id) : [];
   
   const isActive = (path: string) => {
     return location.pathname.includes(path);
@@ -92,6 +102,18 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
           <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
             <Search className="w-5 h-5" />
           </button>
+          {isAdmin && (
+            <button 
+              onClick={() => setIsPermissionLogModalOpen(true)}
+              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors relative"
+              title="权限拦截记录"
+            >
+              <Shield className="w-5 h-5" />
+              {permissionLogs.length > 0 && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full" />
+              )}
+            </button>
+          )}
           <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors relative">
             <Bell className="w-5 h-5" />
             <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full" />
@@ -153,6 +175,72 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
           {children}
         </main>
       </div>
+
+      <Modal
+        isOpen={isPermissionLogModalOpen}
+        onClose={() => setIsPermissionLogModalOpen(false)}
+        title="权限拦截记录"
+        className="max-w-lg"
+      >
+        {permissionLogs.length > 0 ? (
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {permissionLogs.map((log) => (
+              <div
+                key={log.id}
+                className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200"
+              >
+                <div className="p-2 bg-amber-100 rounded-lg flex-shrink-0">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-slate-800">
+                      {log.action}
+                    </span>
+                    <span className="text-xs text-slate-400 flex-shrink-0">
+                      {formatRelativeTime(log.timestamp)}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                    <span className="flex items-center gap-1">
+                      <User className="w-3 h-3" />
+                      {log.userName}
+                    </span>
+                    <span className="text-slate-300">·</span>
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded text-xs font-medium",
+                      log.userRole === 'admin' 
+                        ? "bg-indigo-100 text-indigo-600"
+                        : log.userRole === 'editor'
+                          ? "bg-emerald-100 text-emerald-600"
+                          : "bg-amber-100 text-amber-600"
+                    )}>
+                      {log.userRole === 'admin' ? '管理员' : log.userRole === 'editor' ? '编辑者' : '查看者'}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-400 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {formatDate(log.timestamp)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-8 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+              <Shield className="w-8 h-8 text-slate-300" />
+            </div>
+            <p className="text-sm text-slate-600">暂无权限拦截记录</p>
+            <p className="text-xs text-slate-400 mt-1">当查看者尝试执行无权限操作时会在此记录</p>
+          </div>
+        )}
+        <div className="mt-4 pt-4 border-t border-slate-200">
+          <p className="text-xs text-slate-400">
+            共 {permissionLogs.length} 条记录 · 最多保留 50 条
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }
