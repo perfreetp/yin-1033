@@ -38,7 +38,10 @@ interface NodeDiff {
 interface EdgeDiff {
   added: CanvasEdge[];
   removed: CanvasEdge[];
+  modified: { before: CanvasEdge; after: CanvasEdge; changes: string[] }[];
 }
+
+type HighlightType = 'added' | 'removed' | 'modified' | null;
 
 export default function Versions() {
   const { id } = useParams<{ id: string }>();
@@ -63,6 +66,7 @@ export default function Versions() {
   const [newVersionDescription, setNewVersionDescription] = useState('');
   const [highlightNodeId, setHighlightNodeId] = useState<string | null>(null);
   const [highlightEdgeId, setHighlightEdgeId] = useState<string | null>(null);
+  const [highlightType, setHighlightType] = useState<HighlightType>(null);
   const [changeTab, setChangeTab] = useState<ChangeTab>('nodes');
 
   useEffect(() => {
@@ -174,6 +178,7 @@ export default function Versions() {
     setCompareVersion2(temp);
     setHighlightNodeId(null);
     setHighlightEdgeId(null);
+    setHighlightType(null);
   };
 
   const nodeDiff = useMemo<NodeDiff>(() => {
@@ -223,15 +228,17 @@ export default function Versions() {
 
   const edgeDiff = useMemo<EdgeDiff>(() => {
     if (!compareVersion1 || !compareVersion2) {
-      return { added: [], removed: [] };
+      return { added: [], removed: [], modified: [] };
     }
 
     const v1Edges = compareVersion1.snapshot.edges;
     const v2Edges = compareVersion2.snapshot.edges;
     const v1EdgeMap = new Map(v1Edges.map(e => [e.id, e]));
+    const v2EdgeMap = new Map(v2Edges.map(e => [e.id, e]));
 
     const added: CanvasEdge[] = [];
     const removed: CanvasEdge[] = [];
+    const modified: { before: CanvasEdge; after: CanvasEdge; changes: string[] }[] = [];
 
     for (const edge of v2Edges) {
       if (!v1EdgeMap.has(edge.id)) {
@@ -240,44 +247,71 @@ export default function Versions() {
     }
 
     for (const edge of v1Edges) {
-      if (!v2Edges.find(e => e.id === edge.id)) {
+      if (!v2EdgeMap.has(edge.id)) {
         removed.push(edge);
       }
     }
 
-    return { added, removed };
+    for (const v2Edge of v2Edges) {
+      const v1Edge = v1EdgeMap.get(v2Edge.id);
+      if (v1Edge) {
+        const changes: string[] = [];
+        if (v1Edge.label !== v2Edge.label) changes.push('label');
+        if (v1Edge.style !== v2Edge.style) changes.push('style');
+        if (v1Edge.source !== v2Edge.source) changes.push('source');
+        if (v1Edge.target !== v2Edge.target) changes.push('target');
+        if (changes.length > 0) {
+          modified.push({ before: v1Edge, after: v2Edge, changes });
+        }
+      }
+    }
+
+    return { added, removed, modified };
   }, [compareVersion1, compareVersion2]);
 
-  const handleNodeChangeClick = (nodeId: string) => {
+  const handleNodeChangeClick = (nodeId: string, type: HighlightType) => {
     setHighlightNodeId(nodeId);
     setHighlightEdgeId(null);
+    setHighlightType(type);
   };
 
-  const handleEdgeChangeClick = (edgeId: string) => {
+  const handleEdgeChangeClick = (edgeId: string, type: HighlightType) => {
     setHighlightEdgeId(edgeId);
     setHighlightNodeId(null);
+    setHighlightType(type);
   };
 
-  const previewNodes = useMemo(() => {
+  const v1Nodes = useMemo(() => {
+    if (!compareVersion1) return [];
+    return compareVersion1.snapshot.nodes;
+  }, [compareVersion1]);
+
+  const v2Nodes = useMemo(() => {
     if (!compareVersion2) return [];
     return compareVersion2.snapshot.nodes;
   }, [compareVersion2]);
 
-  const previewEdges = useMemo(() => {
+  const v1Edges = useMemo(() => {
+    if (!compareVersion1) return [];
+    return compareVersion1.snapshot.edges;
+  }, [compareVersion1]);
+
+  const v2Edges = useMemo(() => {
     if (!compareVersion2) return [];
     return compareVersion2.snapshot.edges;
   }, [compareVersion2]);
 
   const previewBounds = useMemo(() => {
-    if (previewNodes.length === 0) {
+    const allNodes = [...v1Nodes, ...v2Nodes];
+    if (allNodes.length === 0) {
       return { minX: 0, minY: 0, maxX: 300, maxY: 200 };
     }
-    const minX = Math.min(...previewNodes.map(n => n.x));
-    const minY = Math.min(...previewNodes.map(n => n.y));
-    const maxX = Math.max(...previewNodes.map(n => n.x + n.width));
-    const maxY = Math.max(...previewNodes.map(n => n.y + n.height));
+    const minX = Math.min(...allNodes.map(n => n.x));
+    const minY = Math.min(...allNodes.map(n => n.y));
+    const maxX = Math.max(...allNodes.map(n => n.x + n.width));
+    const maxY = Math.max(...allNodes.map(n => n.y + n.height));
     return { minX, minY, maxX, maxY };
-  }, [previewNodes]);
+  }, [v1Nodes, v2Nodes]);
 
   return (
     <ProjectLayout>
@@ -677,7 +711,7 @@ export default function Versions() {
                       <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
                         <div className="flex bg-white rounded-lg p-0.5 border border-slate-200 w-fit">
                           <button
-                            onClick={() => { setChangeTab('nodes'); setHighlightNodeId(null); setHighlightEdgeId(null); }}
+                            onClick={() => { setChangeTab('nodes'); setHighlightNodeId(null); setHighlightEdgeId(null); setHighlightType(null); }}
                             className={cn(
                               "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
                               changeTab === 'nodes'
@@ -695,7 +729,7 @@ export default function Versions() {
                             </span>
                           </button>
                           <button
-                            onClick={() => { setChangeTab('edges'); setHighlightNodeId(null); setHighlightEdgeId(null); }}
+                            onClick={() => { setChangeTab('edges'); setHighlightNodeId(null); setHighlightEdgeId(null); setHighlightType(null); }}
                             className={cn(
                               "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
                               changeTab === 'edges'
@@ -709,7 +743,7 @@ export default function Versions() {
                               "px-1.5 py-0.5 rounded-full text-xs",
                               changeTab === 'edges' ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
                             )}>
-                              {edgeDiff.added.length + edgeDiff.removed.length}
+                              {edgeDiff.added.length + edgeDiff.removed.length + edgeDiff.modified.length}
                             </span>
                           </button>
                         </div>
@@ -728,10 +762,10 @@ export default function Versions() {
                                   {nodeDiff.added.map(node => (
                                     <div
                                       key={node.id}
-                                      onClick={() => handleNodeChangeClick(node.id)}
+                                      onClick={() => handleNodeChangeClick(node.id, 'added')}
                                       className={cn(
                                         "flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all",
-                                        highlightNodeId === node.id
+                                        highlightNodeId === node.id && highlightType === 'added'
                                           ? "bg-emerald-100 border border-emerald-300"
                                           : "hover:bg-slate-50 border border-transparent"
                                       )}
@@ -744,7 +778,7 @@ export default function Versions() {
                                           {node.label}
                                         </div>
                                         <div className="text-xs text-slate-500 truncate">
-                                          {node.type}
+                                          新增节点 · {node.type}
                                         </div>
                                       </div>
                                       <div
@@ -767,10 +801,10 @@ export default function Versions() {
                                   {nodeDiff.removed.map(node => (
                                     <div
                                       key={node.id}
-                                      onClick={() => handleNodeChangeClick(node.id)}
+                                      onClick={() => handleNodeChangeClick(node.id, 'removed')}
                                       className={cn(
                                         "flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all",
-                                        highlightNodeId === node.id
+                                        highlightNodeId === node.id && highlightType === 'removed'
                                           ? "bg-rose-100 border border-rose-300"
                                           : "hover:bg-slate-50 border border-transparent"
                                       )}
@@ -783,7 +817,7 @@ export default function Versions() {
                                           {node.label}
                                         </div>
                                         <div className="text-xs text-slate-500 truncate">
-                                          {node.type}
+                                          删除节点 · {node.type}
                                         </div>
                                       </div>
                                       <div
@@ -803,44 +837,54 @@ export default function Versions() {
                                   修改节点 ({nodeDiff.modified.length})
                                 </div>
                                 <div className="space-y-1">
-                                  {nodeDiff.modified.map(({ before: _before, after, changes }) => (
-                                    <div
-                                      key={after.id}
-                                      onClick={() => handleNodeChangeClick(after.id)}
-                                      className={cn(
-                                        "flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all",
-                                        highlightNodeId === after.id
-                                          ? "bg-blue-100 border border-blue-300"
-                                          : "hover:bg-slate-50 border border-transparent"
-                                      )}
-                                    >
-                                      <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                                        <Zap className="w-3.5 h-3.5 text-blue-600" />
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="text-sm font-medium text-slate-800 truncate">
-                                          {after.label}
-                                        </div>
-                                        <div className="text-xs text-slate-500 truncate">
-                                          {changes.map(c => {
-                                            const map: Record<string, string> = {
-                                              label: '名称',
-                                              color: '颜色',
-                                              position: '位置',
-                                              size: '尺寸',
-                                              type: '类型',
-                                              lane: '泳道'
-                                            };
-                                            return map[c] || c;
-                                          }).join('、')}
-                                        </div>
-                                      </div>
+                                  {nodeDiff.modified.map(({ before, after, changes }) => {
+                                    const changeDescriptions = changes.map(c => {
+                                      switch (c) {
+                                        case 'label':
+                                          return `名称从"${before.label}"改为"${after.label}"`;
+                                        case 'color':
+                                          return '颜色变更';
+                                        case 'position':
+                                          return '位置调整';
+                                        case 'size':
+                                          return '尺寸调整';
+                                        case 'type':
+                                          return '类型变更';
+                                        case 'lane':
+                                          return '泳道变更';
+                                        default:
+                                          return `${c}变更`;
+                                      }
+                                    });
+                                    return (
                                       <div
-                                        className="w-4 h-4 rounded-full border-2 border-slate-200 flex-shrink-0"
-                                        style={{ backgroundColor: after.color }}
-                                      />
-                                    </div>
-                                  ))}
+                                        key={after.id}
+                                        onClick={() => handleNodeChangeClick(after.id, 'modified')}
+                                        className={cn(
+                                          "flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all",
+                                          highlightNodeId === after.id && highlightType === 'modified'
+                                            ? "bg-blue-100 border border-blue-300"
+                                            : "hover:bg-slate-50 border border-transparent"
+                                        )}
+                                      >
+                                        <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                                          <Zap className="w-3.5 h-3.5 text-blue-600" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-sm font-medium text-slate-800 truncate">
+                                            {after.label}
+                                          </div>
+                                          <div className="text-xs text-slate-500 truncate">
+                                            {changeDescriptions.join('；')}
+                                          </div>
+                                        </div>
+                                        <div
+                                          className="w-4 h-4 rounded-full border-2 border-slate-200 flex-shrink-0"
+                                          style={{ backgroundColor: after.color }}
+                                        />
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}
@@ -864,15 +908,15 @@ export default function Versions() {
                                 </div>
                                 <div className="space-y-1">
                                   {edgeDiff.added.map(edge => {
-                                    const sourceNode = previewNodes.find(n => n.id === edge.source);
-                                    const targetNode = previewNodes.find(n => n.id === edge.target);
+                                    const sourceNode = v2Nodes.find(n => n.id === edge.source);
+                                    const targetNode = v2Nodes.find(n => n.id === edge.target);
                                     return (
                                       <div
                                         key={edge.id}
-                                        onClick={() => handleEdgeChangeClick(edge.id)}
+                                        onClick={() => handleEdgeChangeClick(edge.id, 'added')}
                                         className={cn(
                                           "flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all",
-                                          highlightEdgeId === edge.id
+                                          highlightEdgeId === edge.id && highlightType === 'added'
                                             ? "bg-emerald-100 border border-emerald-300"
                                             : "hover:bg-slate-50 border border-transparent"
                                         )}
@@ -885,7 +929,7 @@ export default function Versions() {
                                             {sourceNode?.label || '?'} → {targetNode?.label || '?'}
                                           </div>
                                           <div className="text-xs text-slate-500 truncate">
-                                            {edge.style}
+                                            新增连线 · {edge.style}
                                           </div>
                                         </div>
                                       </div>
@@ -903,15 +947,15 @@ export default function Versions() {
                                 </div>
                                 <div className="space-y-1">
                                   {edgeDiff.removed.map(edge => {
-                                    const sourceNode = compareVersion1.snapshot.nodes.find(n => n.id === edge.source);
-                                    const targetNode = compareVersion1.snapshot.nodes.find(n => n.id === edge.target);
+                                    const sourceNode = v1Nodes.find(n => n.id === edge.source);
+                                    const targetNode = v1Nodes.find(n => n.id === edge.target);
                                     return (
                                       <div
                                         key={edge.id}
-                                        onClick={() => handleEdgeChangeClick(edge.id)}
+                                        onClick={() => handleEdgeChangeClick(edge.id, 'removed')}
                                         className={cn(
                                           "flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all",
-                                          highlightEdgeId === edge.id
+                                          highlightEdgeId === edge.id && highlightType === 'removed'
                                             ? "bg-rose-100 border border-rose-300"
                                             : "hover:bg-slate-50 border border-transparent"
                                         )}
@@ -924,7 +968,7 @@ export default function Versions() {
                                             {sourceNode?.label || '?'} → {targetNode?.label || '?'}
                                           </div>
                                           <div className="text-xs text-slate-500 truncate">
-                                            {edge.style}
+                                            删除连线 · {edge.style}
                                           </div>
                                         </div>
                                       </div>
@@ -934,7 +978,65 @@ export default function Versions() {
                               </div>
                             )}
 
-                            {edgeDiff.added.length === 0 && edgeDiff.removed.length === 0 && (
+                            {edgeDiff.modified.length > 0 && (
+                              <div>
+                                <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-blue-700">
+                                  <Zap className="w-3.5 h-3.5" />
+                                  修改连线 ({edgeDiff.modified.length})
+                                </div>
+                                <div className="space-y-1">
+                                  {edgeDiff.modified.map(({ before, after, changes }) => {
+                                    const sourceNode = v2Nodes.find(n => n.id === after.source);
+                                    const targetNode = v2Nodes.find(n => n.id === after.target);
+                                    const changeDescriptions = changes.map(c => {
+                                      switch (c) {
+                                        case 'label':
+                                          return `标签从"${before.label || '空'}"改为"${after.label || '空'}"`;
+                                        case 'style':
+                                          return '样式变更';
+                                        case 'source':
+                                        case 'target': {
+                                          const beforeSrc = v1Nodes.find(n => n.id === before.source);
+                                          const beforeTgt = v1Nodes.find(n => n.id === before.target);
+                                          const afterSrc = v2Nodes.find(n => n.id === after.source);
+                                          const afterTgt = v2Nodes.find(n => n.id === after.target);
+                                          return `连接变更（${beforeSrc?.label || '?'}→${beforeTgt?.label || '?'} 改为 ${afterSrc?.label || '?'}→${afterTgt?.label || '?'}）`;
+                                        }
+                                        default:
+                                          return `${c}变更`;
+                                      }
+                                    });
+                                    const uniqueDescriptions = [...new Set(changeDescriptions)];
+                                    return (
+                                      <div
+                                        key={after.id}
+                                        onClick={() => handleEdgeChangeClick(after.id, 'modified')}
+                                        className={cn(
+                                          "flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all",
+                                          highlightEdgeId === after.id && highlightType === 'modified'
+                                            ? "bg-blue-100 border border-blue-300"
+                                            : "hover:bg-slate-50 border border-transparent"
+                                        )}
+                                      >
+                                        <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                                          <Zap className="w-3.5 h-3.5 text-blue-600" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-sm font-medium text-slate-800 truncate">
+                                            {sourceNode?.label || '?'} → {targetNode?.label || '?'}
+                                          </div>
+                                          <div className="text-xs text-slate-500 truncate">
+                                            {uniqueDescriptions.join('；')}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {edgeDiff.added.length === 0 && edgeDiff.removed.length === 0 && edgeDiff.modified.length === 0 && (
                               <div className="flex flex-col items-center justify-center py-8 text-center">
                                 <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mb-2">
                                   <Check className="w-6 h-6 text-slate-400" />
@@ -949,7 +1051,23 @@ export default function Versions() {
 
                     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col">
                       <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
-                        <h3 className="text-sm font-semibold text-slate-800">预览图（版本 B）</h3>
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-semibold text-slate-800">对比预览图</h3>
+                          <div className="flex items-center gap-3 text-xs">
+                            <div className="flex items-center gap-1">
+                              <div className="w-2.5 h-2.5 rounded-sm border border-emerald-500 opacity-40" style={{ borderStyle: 'solid' }} />
+                              <span className="text-slate-500">旧版本</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-2.5 h-2.5 rounded-sm border-2 border-amber-500" />
+                              <span className="text-slate-500">新版本</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-2.5 h-2.5 rounded-sm border border-2 border-rose-500" style={{ borderStyle: 'dashed' }} />
+                              <span className="text-slate-500">已删除</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                       <div className="flex-1 flex items-center justify-center p-4 bg-slate-50">
                         <div className="w-full h-full bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
@@ -965,6 +1083,18 @@ export default function Versions() {
                               <marker id="preview-arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
                                 <polygon points="0 0, 8 3, 0 6" fill="#94a3b8" />
                               </marker>
+                              <marker id="preview-arrowhead-v1" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                                <polygon points="0 0, 8 3, 0 6" fill="#94a3b8" opacity="0.3" />
+                              </marker>
+                              <marker id="preview-arrowhead-removed" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                                <polygon points="0 0, 8 3, 0 6" fill="#ef4444" />
+                              </marker>
+                              <filter id="highlight-shadow">
+                                <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#6366f1" floodOpacity="0.5" />
+                              </filter>
+                              <filter id="removed-highlight-shadow">
+                                <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#ef4444" floodOpacity="0.5" />
+                              </filter>
                             </defs>
                             <rect
                               x={previewBounds.minX - 20}
@@ -981,38 +1111,11 @@ export default function Versions() {
                               fill="url(#preview-grid)"
                             />
 
-                            {previewEdges.map(edge => {
-                              const sourceNode = previewNodes.find(n => n.id === edge.source);
-                              const targetNode = previewNodes.find(n => n.id === edge.target);
-                              if (!sourceNode || !targetNode) return null;
+                            {v1Nodes.map(node => {
+                              const isInV2 = v2Nodes.some(n => n.id === node.id);
+                              if (!isInV2) return null;
 
-                              const x1 = sourceNode.x + sourceNode.width;
-                              const y1 = sourceNode.y + sourceNode.height / 2;
-                              const x2 = targetNode.x;
-                              const y2 = targetNode.y + targetNode.height / 2;
-                              const dx = x2 - x1;
-                              const controlOffset = Math.min(Math.abs(dx) / 2, 80);
-                              const path = `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`;
-
-                              const isHighlighted = highlightEdgeId === edge.id;
-
-                              return (
-                                <path
-                                  key={edge.id}
-                                  d={path}
-                                  fill="none"
-                                  stroke={isHighlighted ? '#6366f1' : '#94a3b8'}
-                                  strokeWidth={isHighlighted ? 3 : 1.5}
-                                  strokeDasharray={edge.style === 'dashed' ? '6,3' : 'none'}
-                                  markerEnd={edge.style === 'arrow' ? 'url(#preview-arrowhead)' : ''}
-                                  className={cn(isHighlighted && 'drop-shadow-lg')}
-                                />
-                              );
-                            })}
-
-                            {previewNodes.map(node => {
-                              const isHighlighted = highlightNodeId === node.id;
-                              const { x, y, width, height, color, type, label } = node;
+                              const { x, y, width, height, color, type, id } = node;
 
                               let shape = null;
                               switch (type) {
@@ -1024,8 +1127,8 @@ export default function Versions() {
                                       rx={width / 2}
                                       ry={height / 2}
                                       fill={color}
-                                      stroke={isHighlighted ? '#6366f1' : 'rgba(0,0,0,0.1)'}
-                                      strokeWidth={isHighlighted ? 3 : 1.5}
+                                      stroke="rgba(0,0,0,0.1)"
+                                      strokeWidth={1.5}
                                     />
                                   );
                                   break;
@@ -1035,8 +1138,8 @@ export default function Versions() {
                                     <polygon
                                       points={points}
                                       fill={color}
-                                      stroke={isHighlighted ? '#6366f1' : 'rgba(0,0,0,0.1)'}
-                                      strokeWidth={isHighlighted ? 3 : 1.5}
+                                      stroke="rgba(0,0,0,0.1)"
+                                      strokeWidth={1.5}
                                     />
                                   );
                                   break;
@@ -1050,8 +1153,270 @@ export default function Versions() {
                                       height={height}
                                       rx={6}
                                       fill={color}
-                                      stroke={isHighlighted ? '#6366f1' : 'rgba(0,0,0,0.1)'}
-                                      strokeWidth={isHighlighted ? 3 : 1.5}
+                                      stroke="rgba(0,0,0,0.1)"
+                                      strokeWidth={1.5}
+                                    />
+                                  );
+                              }
+
+                              return (
+                                <g key={`v1-node-${id}`} opacity="0.3">
+                                  {shape}
+                                </g>
+                              );
+                            })}
+
+                            {v1Edges.map(edge => {
+                              const sourceNode = v1Nodes.find(n => n.id === edge.source);
+                              const targetNode = v1Nodes.find(n => n.id === edge.target);
+                              if (!sourceNode || !targetNode) return null;
+
+                              const x1 = sourceNode.x + sourceNode.width;
+                              const y1 = sourceNode.y + sourceNode.height / 2;
+                              const x2 = targetNode.x;
+                              const y2 = targetNode.y + targetNode.height / 2;
+                              const dx = x2 - x1;
+                              const controlOffset = Math.min(Math.abs(dx) / 2, 80);
+                              const path = `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`;
+
+                              return (
+                                <path
+                                  key={`v1-edge-${edge.id}`}
+                                  d={path}
+                                  fill="none"
+                                  stroke="#94a3b8"
+                                  strokeWidth={1.5}
+                                  strokeDasharray={edge.style === 'dashed' ? '6,3' : 'none'}
+                                  markerEnd={edge.style === 'arrow' ? 'url(#preview-arrowhead-v1)' : ''}
+                                  opacity="0.3"
+                                />
+                              );
+                            })}
+
+                            {v1Nodes.map(node => {
+                              const { x, y, width, height, type, id } = node;
+                              const isInV2 = v2Nodes.some(n => n.id === id);
+                              if (isInV2) return null;
+
+                              const isHighlighted = highlightType === 'removed' && highlightNodeId === id;
+
+                              let shape = null;
+                              const strokeWidth = isHighlighted ? 4 : 2;
+                              switch (type) {
+                                case 'circle':
+                                  shape = (
+                                    <ellipse
+                                      cx={x + width / 2}
+                                      cy={y + height / 2}
+                                      rx={width / 2}
+                                      ry={height / 2}
+                                      fill="rgba(239, 68, 68, 0.1)"
+                                      stroke="#ef4444"
+                                      strokeWidth={strokeWidth}
+                                      strokeDasharray="4 2"
+                                      filter={isHighlighted ? 'url(#removed-highlight-shadow)' : undefined}
+                                    />
+                                  );
+                                  break;
+                                case 'diamond': {
+                                  const points = `${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}`;
+                                  shape = (
+                                    <polygon
+                                      points={points}
+                                      fill="rgba(239, 68, 68, 0.1)"
+                                      stroke="#ef4444"
+                                      strokeWidth={strokeWidth}
+                                      strokeDasharray="4 2"
+                                      filter={isHighlighted ? 'url(#removed-highlight-shadow)' : undefined}
+                                    />
+                                  );
+                                  break;
+                                }
+                                default:
+                                  shape = (
+                                    <rect
+                                      x={x}
+                                      y={y}
+                                      width={width}
+                                      height={height}
+                                      rx={6}
+                                      fill="rgba(239, 68, 68, 0.1)"
+                                      stroke="#ef4444"
+                                      strokeWidth={strokeWidth}
+                                      strokeDasharray="4 2"
+                                      filter={isHighlighted ? 'url(#removed-highlight-shadow)' : undefined}
+                                    />
+                                  );
+                              }
+
+                              return (
+                                <g key={`removed-node-${id}`}>
+                                  {shape}
+                                  <rect
+                                    x={x + width / 2 - 24}
+                                    y={y + height / 2 - 10}
+                                    width="48"
+                                    height="20"
+                                    rx="4"
+                                    fill="#ef4444"
+                                    opacity="0.95"
+                                  />
+                                  <text
+                                    x={x + width / 2}
+                                    y={y + height / 2}
+                                    textAnchor="middle"
+                                    dominantBaseline="middle"
+                                    fill="white"
+                                    fontSize="9"
+                                    fontWeight="600"
+                                  >
+                                    已删除
+                                  </text>
+                                </g>
+                              );
+                            })}
+
+                            {v1Edges.map(edge => {
+                              const isInV2 = v2Edges.some(e => e.id === edge.id);
+                              if (isInV2) return null;
+                              const sourceNode = v1Nodes.find(n => n.id === edge.source);
+                              const targetNode = v1Nodes.find(n => n.id === edge.target);
+                              if (!sourceNode || !targetNode) return null;
+
+                              const x1 = sourceNode.x + sourceNode.width;
+                              const y1 = sourceNode.y + sourceNode.height / 2;
+                              const x2 = targetNode.x;
+                              const y2 = targetNode.y + targetNode.height / 2;
+                              const dx = x2 - x1;
+                              const controlOffset = Math.min(Math.abs(dx) / 2, 80);
+                              const path = `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`;
+
+                              const isHighlighted = highlightType === 'removed' && highlightEdgeId === edge.id;
+
+                              return (
+                                <path
+                                  key={`removed-edge-${edge.id}`}
+                                  d={path}
+                                  fill="none"
+                                  stroke="#ef4444"
+                                  strokeWidth={isHighlighted ? 4 : 2}
+                                  strokeDasharray="4 2"
+                                  markerEnd="url(#preview-arrowhead-removed)"
+                                  filter={isHighlighted ? 'url(#removed-highlight-shadow)' : undefined}
+                                />
+                              );
+                            })}
+
+                            {v2Edges.map(edge => {
+                              const sourceNode = v2Nodes.find(n => n.id === edge.source);
+                              const targetNode = v2Nodes.find(n => n.id === edge.target);
+                              if (!sourceNode || !targetNode) return null;
+
+                              const x1 = sourceNode.x + sourceNode.width;
+                              const y1 = sourceNode.y + sourceNode.height / 2;
+                              const x2 = targetNode.x;
+                              const y2 = targetNode.y + targetNode.height / 2;
+                              const dx = x2 - x1;
+                              const controlOffset = Math.min(Math.abs(dx) / 2, 80);
+                              const path = `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`;
+
+                              const isAdded = !v1Edges.some(e => e.id === edge.id);
+                              const isModifiedEdge = edgeDiff.modified.some(m => m.after.id === edge.id);
+                              const isHighlightedAdded = highlightType === 'added' && highlightEdgeId === edge.id;
+                              const isHighlightedModified = highlightType === 'modified' && highlightEdgeId === edge.id;
+
+                              let strokeColor = '#94a3b8';
+                              let strokeWidthVal = 1.5;
+                              if (isAdded) {
+                                strokeColor = '#10b981';
+                                strokeWidthVal = 2;
+                              }
+                              if (isModifiedEdge) {
+                                strokeColor = '#6366f1';
+                                strokeWidthVal = 2;
+                              }
+                              if (isHighlightedAdded || isHighlightedModified) {
+                                strokeColor = '#6366f1';
+                                strokeWidthVal = 3;
+                              }
+
+                              return (
+                                <path
+                                  key={`v2-edge-${edge.id}`}
+                                  d={path}
+                                  fill="none"
+                                  stroke={strokeColor}
+                                  strokeWidth={strokeWidthVal}
+                                  strokeDasharray={edge.style === 'dashed' ? '6,3' : 'none'}
+                                  markerEnd={edge.style === 'arrow' ? 'url(#preview-arrowhead)' : ''}
+                                  filter={(isHighlightedAdded || isHighlightedModified) ? 'url(#highlight-shadow)' : undefined}
+                                />
+                              );
+                            })}
+
+                            {v2Nodes.map(node => {
+                              const isInV1 = v1Nodes.some(n => n.id === node.id);
+                              const isAdded = !isInV1;
+                              const isModifiedNode = nodeDiff.modified.some(m => m.after.id === node.id);
+                              const isHighlightedAdded = highlightType === 'added' && highlightNodeId === node.id;
+                              const isHighlightedModified = highlightType === 'modified' && highlightNodeId === node.id;
+                              const isHighlighted = isHighlightedAdded || isHighlightedModified;
+
+                              const { x, y, width, height, color, type, label, id } = node;
+
+                              let strokeColor = 'rgba(0,0,0,0.1)';
+                              let strokeWidthVal = 1.5;
+                              if (isAdded) {
+                                strokeColor = '#10b981';
+                                strokeWidthVal = 2;
+                              }
+                              if (isModifiedNode) {
+                                strokeColor = '#6366f1';
+                                strokeWidthVal = 2;
+                              }
+                              if (isHighlighted) {
+                                strokeColor = '#6366f1';
+                                strokeWidthVal = 3;
+                              }
+
+                              let shape = null;
+                              switch (type) {
+                                case 'circle':
+                                  shape = (
+                                    <ellipse
+                                      cx={x + width / 2}
+                                      cy={y + height / 2}
+                                      rx={width / 2}
+                                      ry={height / 2}
+                                      fill={color}
+                                      stroke={strokeColor}
+                                      strokeWidth={strokeWidthVal}
+                                    />
+                                  );
+                                  break;
+                                case 'diamond': {
+                                  const points = `${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}`;
+                                  shape = (
+                                    <polygon
+                                      points={points}
+                                      fill={color}
+                                      stroke={strokeColor}
+                                      strokeWidth={strokeWidthVal}
+                                    />
+                                  );
+                                  break;
+                                }
+                                default:
+                                  shape = (
+                                    <rect
+                                      x={x}
+                                      y={y}
+                                      width={width}
+                                      height={height}
+                                      rx={6}
+                                      fill={color}
+                                      stroke={strokeColor}
+                                      strokeWidth={strokeWidthVal}
                                     />
                                   );
                               }
@@ -1059,7 +1424,7 @@ export default function Versions() {
                               const textColor = type === 'text' ? '#334155' : 'white';
 
                               return (
-                                <g key={node.id} className={cn(isHighlighted && 'drop-shadow-lg')}>
+                                <g key={`v2-node-${id}`} filter={isHighlighted ? 'url(#highlight-shadow)' : undefined}>
                                   {shape}
                                   <text
                                     x={x + width / 2}

@@ -32,7 +32,7 @@ import { mockPublish, mockChangeLog, mockDataFields, mockMetrics } from '@/data/
 import { useProjectStore } from '@/store/useProjectStore';
 import { useProjectCanvasStore } from '@/store/useProjectCanvasStore';
 import { usePermissionLogStore } from '@/store/usePermissionLogStore';
-import type { PublishPermission, ChangeLogItem, Version } from '@/types';
+import type { PublishPermission, ChangeLogItem } from '@/types';
 import { cn, formatDate, copyToClipboard, exportToCSV, exportToJSON, exportCanvasToPNG } from '@/utils/helpers';
 
 const permissionOptions: { value: PublishPermission; label: string; icon: React.ReactNode; description: string }[] = [
@@ -153,9 +153,15 @@ export default function Publish() {
     return projectVersions[currentProjectId] || [];
   }, [projectVersions, currentProjectId]);
 
-  const latestVersion = useMemo(() => {
-    return versions.length > 0 ? versions[0] : null;
+  const sortedVersions = useMemo(() => {
+    return [...versions].sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
   }, [versions]);
+
+  const latestVersion = useMemo(() => {
+    return sortedVersions.length > 0 ? sortedVersions[0] : null;
+  }, [sortedVersions]);
 
   const selectedVersion = useMemo(() => {
     if (selectedVersionId) {
@@ -163,6 +169,18 @@ export default function Publish() {
     }
     return latestVersion;
   }, [selectedVersionId, versions, latestVersion]);
+
+  useEffect(() => {
+    if (latestVersion && selectedVersionId === null) {
+      setSelectedVersionId(latestVersion.id);
+    }
+  }, [latestVersion, selectedVersionId]);
+
+  useEffect(() => {
+    if (latestVersion && selectedVersionId && !versions.find(v => v.id === selectedVersionId)) {
+      setSelectedVersionId(latestVersion.id);
+    }
+  }, [latestVersion, selectedVersionId, versions]);
 
   const canvasData = useMemo(() => {
     if (selectedVersion) {
@@ -173,9 +191,31 @@ export default function Publish() {
     return canvas || { nodes: [], edges: [], lanes: [] };
   }, [selectedVersion, projectCanvases, currentProjectId]);
 
+  const shareUrl = useMemo(() => {
+    const projectId = id || currentProjectId || '';
+    const version = selectedVersion?.version || 'v1.0.0';
+    return `https://dataflow.app/share/${projectId}?version=${version}`;
+  }, [id, currentProjectId, selectedVersion]);
+
+  const filteredChangeLogs = useMemo(() => {
+    if (!selectedVersion) return changeLogs;
+    const versionTime = new Date(selectedVersion.createdAt).getTime();
+    const versionLog: ChangeLogItem = {
+      id: `version-${selectedVersion.id}`,
+      action: '发布版本',
+      user: selectedVersion.author,
+      timestamp: selectedVersion.createdAt,
+      description: `${selectedVersion.version} - ${selectedVersion.description}`,
+    };
+    const others = changeLogs.filter(cl =>
+      new Date(cl.timestamp).getTime() <= versionTime
+    );
+    return [versionLog, ...others];
+  }, [changeLogs, selectedVersion]);
+
   const handleCopyLink = async () => {
     try {
-      await copyToClipboard(mockPublish.shareUrl);
+      await copyToClipboard(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
@@ -291,19 +331,19 @@ export default function Publish() {
                     </div>
                     <h3 className="text-sm font-semibold text-slate-800">发布历史</h3>
                     <span className="ml-auto text-xs text-slate-400">
-                      共 {versions.length} 个版本
+                      共 {sortedVersions.length} 个版本
                     </span>
                   </div>
                 </div>
                 <div className="max-h-96 overflow-y-auto">
-                  {versions.map((version, index) => (
+                  {sortedVersions.map((version, index) => (
                     <button
                       key={version.id}
                       onClick={() => handleSelectVersion(version.id)}
                       className={cn(
                         'w-full p-4 text-left border-b border-slate-100 transition-all hover:bg-slate-50',
                         selectedVersion?.id === version.id && 'bg-indigo-50/50',
-                        index === versions.length - 1 && 'border-b-0'
+                        index === sortedVersions.length - 1 && 'border-b-0'
                       )}
                     >
                       <div className="flex items-start gap-3">
@@ -439,11 +479,19 @@ export default function Publish() {
                         {currentPermission?.label}
                       </span>
                     </div>
-                    {mockPublish.expireAt && (
+                    {selectedVersion?.id === latestVersion?.id && mockPublish.expireAt && (
                       <div className="flex items-center gap-2">
                         <Clock className="w-4 h-4 text-white/70" />
                         <span className="text-sm text-white/80">
                           有效期至 {formatDate(mockPublish.expireAt)}
+                        </span>
+                      </div>
+                    )}
+                    {selectedVersion?.id !== latestVersion?.id && (
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-white/70" />
+                        <span className="text-sm text-white/80">
+                          已过期
                         </span>
                       </div>
                     )}
@@ -480,7 +528,7 @@ export default function Publish() {
                         <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
                           <Link2 className="w-4 h-4 text-slate-400 flex-shrink-0" />
                           <span className="text-sm text-slate-600 truncate font-mono">
-                            {mockPublish.shareUrl}
+                            {shareUrl}
                           </span>
                         </div>
                         <Button
@@ -678,16 +726,23 @@ export default function Publish() {
                   <div className="p-2 bg-amber-50 rounded-lg">
                     <History className="w-4 h-4 text-amber-600" />
                   </div>
-                  <h3 className="text-sm font-semibold text-slate-800">变更记录</h3>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">变更记录</h3>
+                    {selectedVersion && (
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        版本 {selectedVersion.version} 发布记录
+                      </p>
+                    )}
+                  </div>
                   <span className="ml-auto text-xs text-slate-400">
-                    共 {changeLogs.length} 条记录
+                    共 {filteredChangeLogs.length} 条记录
                   </span>
                 </div>
 
                 <div className="relative">
                   <div className="absolute left-5 top-0 bottom-0 w-px bg-slate-200" />
                   <div className="space-y-5">
-                    {changeLogs.map((log: ChangeLogItem) => (
+                    {filteredChangeLogs.map((log: ChangeLogItem) => (
                       <div key={log.id} className="relative flex gap-4">
                         <div className={cn(
                           'relative z-10 w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0',

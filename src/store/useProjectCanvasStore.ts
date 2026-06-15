@@ -106,10 +106,13 @@ export const useProjectCanvasStore = create<ProjectCanvasState>((set, get) => ({
       if (state.projectCanvases[projectId]) {
         return { currentProjectId: projectId };
       }
+      const initialNodes = data?.nodes ?? mockCanvasNodes;
+      const initialEdges = data?.edges ?? mockCanvasEdges;
+      const initialLanes = data?.lanes ?? mockLanes;
       const canvasData: CanvasData = {
-        nodes: data?.nodes || [],
-        edges: data?.edges || [],
-        lanes: data?.lanes || [],
+        nodes: initialNodes,
+        edges: initialEdges,
+        lanes: initialLanes,
       };
       const initialVersion: Version = {
         id: generateId('ver'),
@@ -123,6 +126,8 @@ export const useProjectCanvasStore = create<ProjectCanvasState>((set, get) => ({
           lanes: JSON.parse(JSON.stringify(canvasData.lanes)),
         },
       };
+
+      const presetVersions = getPresetVersions(projectId, initialNodes, initialEdges, initialLanes);
 
       return {
         projectCanvases: {
@@ -139,7 +144,7 @@ export const useProjectCanvasStore = create<ProjectCanvasState>((set, get) => ({
         },
         projectVersions: {
           ...state.projectVersions,
-          [projectId]: state.projectVersions[projectId] || [initialVersion],
+          [projectId]: state.projectVersions[projectId] || presetVersions || [initialVersion],
         },
         currentProjectId: projectId,
       };
@@ -590,3 +595,127 @@ export const useProjectCanvasStore = create<ProjectCanvasState>((set, get) => ({
     get().pushHistory();
   },
 }));
+
+const getPresetVersions = (
+  projectId: string,
+  defaultNodes: CanvasNode[],
+  defaultEdges: CanvasEdge[],
+  defaultLanes: Lane[]
+): Version[] | null => {
+  const versionConfigs: Record<string, { nodeCounts: number[]; versionDates: string[]; descriptions: string[] }> = {
+    'proj-001': {
+      nodeCounts: [], versionDates: [], descriptions: [],
+    },
+    'proj-002': {
+      nodeCounts: [6, 12, 18],
+      versionDates: ['2024-03-01T10:00:00Z', '2024-04-15T14:30:00Z', '2024-06-08T16:45:00Z'],
+      descriptions: ['订单流程初稿：订单创建与支付流程', '补充仓储物流环节', '完成售后与结算节点'],
+    },
+    'proj-003': {
+      nodeCounts: [8, 16, 24, 32],
+      versionDates: ['2024-03-20T09:00:00Z', '2024-04-25T11:20:00Z', '2024-05-28T15:00:00Z', '2024-06-12T10:30:00Z'],
+      descriptions: ['基础指标层：DAU/GMV等核心指标', '新增用户行为指标与留存指标', '补充营收与成本指标', '完成风控与质量指标，体系完善'],
+    },
+    'proj-004': {
+      nodeCounts: [8, 15],
+      versionDates: ['2024-04-25T14:00:00Z', '2024-05-28T09:10:00Z'],
+      descriptions: ['会员等级基础框架', '补充权益与升级条件'],
+    },
+    'proj-005': {
+      nodeCounts: [4, 8],
+      versionDates: ['2024-05-01T10:00:00Z', '2024-06-14T11:00:00Z'],
+      descriptions: ['活动框架初稿', '补充投放渠道与效果评估'],
+    },
+  };
+
+  const config = versionConfigs[projectId];
+  if (!config || config.nodeCounts.length === 0) return null;
+
+  const { nodeCounts, versionDates, descriptions } = config;
+  const maxNodeCount = Math.max(...nodeCounts);
+
+  const extendedNodes: CanvasNode[] = [];
+  const extendedEdges: CanvasEdge[] = [];
+  let copyIndex = 0;
+  while (extendedNodes.length < maxNodeCount) {
+    const suffix = copyIndex === 0 ? '' : `-${copyIndex + 1}`;
+    const offsetX = copyIndex * 20;
+    const offsetY = copyIndex * 15;
+    defaultNodes.forEach((node) => {
+      if (extendedNodes.length < maxNodeCount) {
+        extendedNodes.push({
+          ...node,
+          id: `${node.id}${suffix}`,
+          x: node.x + offsetX,
+          y: node.y + offsetY,
+        });
+      }
+    });
+    defaultEdges.forEach((edge) => {
+      const sourceExists = extendedNodes.some((n) => n.id === `${edge.source}${suffix}`);
+      const targetExists = extendedNodes.some((n) => n.id === `${edge.target}${suffix}`);
+      if (sourceExists && targetExists) {
+        const edgeIdExists = extendedEdges.some((e) => e.id === `${edge.id}${suffix}`);
+        if (!edgeIdExists) {
+          extendedEdges.push({
+            ...edge,
+            id: `${edge.id}${suffix}`,
+            source: `${edge.source}${suffix}`,
+            target: `${edge.target}${suffix}`,
+          });
+        }
+      }
+    });
+    copyIndex++;
+  }
+
+  const extendedLanes: Lane[] = [];
+  let laneCopyIndex = 0;
+  const maxLaneCount = Math.max(3, Math.ceil(maxNodeCount / 8));
+  while (extendedLanes.length < maxLaneCount) {
+    const suffix = laneCopyIndex === 0 ? '' : `-${laneCopyIndex + 1}`;
+    const positionOffset = laneCopyIndex * (defaultLanes[defaultLanes.length - 1]?.position + defaultLanes[defaultLanes.length - 1]?.size || 200);
+    defaultLanes.forEach((lane) => {
+      if (extendedLanes.length < maxLaneCount) {
+        extendedLanes.push({
+          ...lane,
+          id: `${lane.id}${suffix}`,
+          title: laneCopyIndex === 0 ? lane.title : `${lane.title} ${laneCopyIndex + 1}`,
+          position: lane.position + positionOffset,
+        });
+      }
+    });
+    laneCopyIndex++;
+  }
+
+  const sortedNodes = [...extendedNodes].sort((a, b) => a.id.localeCompare(b.id));
+  const sortedEdges = [...extendedEdges].sort((a, b) => a.id.localeCompare(b.id));
+  const sortedLanes = [...extendedLanes].sort((a, b) => a.id.localeCompare(b.id));
+
+  const versionNumPrefixes = ['1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0'];
+
+  const versions: Version[] = [];
+  nodeCounts.forEach((count, i) => {
+    const actualCount = Math.min(count, sortedNodes.length);
+    const versionNodes = sortedNodes.slice(0, actualCount);
+    const nodeIds = new Set(versionNodes.map((n) => n.id));
+    const versionEdges = sortedEdges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
+    const laneCount = Math.max(1, Math.ceil(((i + 1) / nodeCounts.length) * sortedLanes.length));
+    const versionLanes = sortedLanes.slice(0, laneCount);
+
+    versions.push({
+      id: `${projectId}-ver-${String(i + 1).padStart(3, '0')}`,
+      version: `v${versionNumPrefixes[i]}`,
+      createdAt: versionDates[i],
+      author: '张明',
+      description: descriptions[i],
+      snapshot: {
+        nodes: JSON.parse(JSON.stringify(versionNodes)),
+        edges: JSON.parse(JSON.stringify(versionEdges)),
+        lanes: JSON.parse(JSON.stringify(versionLanes)),
+      },
+    });
+  });
+
+  return versions.reverse();
+};
