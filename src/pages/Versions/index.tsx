@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { 
   GitBranch, 
   Clock, 
@@ -16,13 +17,20 @@ import {
 import ProjectLayout from '@/components/Layout/ProjectLayout';
 import Button from '@/components/common/Button';
 import Modal from '@/components/common/Modal';
-import { mockVersions } from '@/data/mockData';
+import { useProjectCanvasStore } from '@/store/useProjectCanvasStore';
 import type { Version } from '@/types';
 import { cn, formatDate, formatRelativeTime } from '@/utils/helpers';
 
 type ViewMode = 'detail' | 'compare';
 
 export default function Versions() {
+  const { id } = useParams<{ id: string }>();
+  const initProjectCanvas = useProjectCanvasStore(state => state.initProjectCanvas);
+  const createVersion = useProjectCanvasStore(state => state.createVersion);
+  const restoreVersion = useProjectCanvasStore(state => state.restoreVersion);
+  const projectVersions = useProjectCanvasStore(state => state.projectVersions);
+  const currentProjectId = useProjectCanvasStore(state => state.currentProjectId);
+  
   const [selectedVersion, setSelectedVersion] = useState<Version | null>(null);
   const [compareVersion1, setCompareVersion1] = useState<Version | null>(null);
   const [compareVersion2, setCompareVersion2] = useState<Version | null>(null);
@@ -32,11 +40,22 @@ export default function Versions() {
   const [versionToRestore, setVersionToRestore] = useState<Version | null>(null);
   const [newVersionDescription, setNewVersionDescription] = useState('');
 
+  useEffect(() => {
+    if (id) {
+      initProjectCanvas(id);
+    }
+  }, [id, initProjectCanvas]);
+
+  const versions = useMemo(() => {
+    if (!currentProjectId) return [];
+    return projectVersions[currentProjectId] || [];
+  }, [projectVersions, currentProjectId]);
+
   const sortedVersions = useMemo(() => {
-    return [...mockVersions].sort((a, b) => 
+    return [...versions].sort((a, b) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, []);
+  }, [versions]);
 
   const currentVersion = sortedVersions[0];
 
@@ -76,7 +95,7 @@ export default function Versions() {
 
   const confirmRestore = () => {
     if (versionToRestore) {
-      console.log('Restoring to version:', versionToRestore.version);
+      restoreVersion(versionToRestore.id);
     }
     setIsRestoreModalOpen(false);
     setVersionToRestore(null);
@@ -87,9 +106,11 @@ export default function Versions() {
   };
 
   const confirmCreateVersion = () => {
-    console.log('Creating new version with description:', newVersionDescription);
-    setNewVersionDescription('');
-    setIsCreateModalOpen(false);
+    if (newVersionDescription.trim()) {
+      createVersion(newVersionDescription.trim());
+      setNewVersionDescription('');
+      setIsCreateModalOpen(false);
+    }
   };
 
   const clearCompare = () => {
@@ -128,7 +149,7 @@ export default function Versions() {
             <div className="relative py-4 pl-6 pr-4">
               <div className="absolute left-6 top-4 bottom-4 w-0.5 bg-slate-200" />
               
-              {sortedVersions.map((version, index) => {
+              {sortedVersions.map((version) => {
                 const isCurrent = isCurrentVersion(version);
                 const isSelected = selectedVersion?.id === version.id;
                 const isCompare1 = compareVersion1?.id === version.id;

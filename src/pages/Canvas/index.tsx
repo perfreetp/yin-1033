@@ -1,4 +1,5 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   Square,
   Circle,
@@ -19,9 +20,10 @@ import {
   Plus
 } from 'lucide-react';
 import ProjectLayout from '@/components/Layout/ProjectLayout';
-import { useCanvasStore } from '@/store/useCanvasStore';
-import { cn, getNodeColors } from '@/utils/helpers';
-import type { NodeType } from '@/types';
+import { useProjectCanvasStore } from '@/store/useProjectCanvasStore';
+import { useProjectStore } from '@/store/useProjectStore';
+import { cn, getNodeColors, exportPNG } from '@/utils/helpers';
+import type { NodeType, UserRole } from '@/types';
 
 const toolbarItems: { type: NodeType; icon: typeof Square; label: string }[] = [
   { type: 'rectangle', icon: Square, label: '矩形' },
@@ -36,6 +38,7 @@ const toolbarItems: { type: NodeType; icon: typeof Square; label: string }[] = [
 const colors = getNodeColors();
 
 export default function CanvasPage() {
+  const { id: projectId } = useParams<{ id: string }>();
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -46,15 +49,17 @@ export default function CanvasPage() {
   const [showGrid, setShowGrid] = useState(true);
 
   const {
-    nodes,
-    edges,
-    lanes,
+    initProjectCanvas,
+    getNodes,
+    getEdges,
+    getLanes,
+    getHistoryIndex,
+    getHistoryLength,
     selectedNodeId,
+    selectedEdgeId,
     zoom,
     panX,
     panY,
-    historyIndex,
-    history,
     isConnecting,
     connectingFrom,
     selectNode,
@@ -71,9 +76,31 @@ export default function CanvasPage() {
     undo,
     redo,
     pushHistory,
-  } = useCanvasStore();
+  } = useProjectCanvasStore();
+
+  const { projects } = useProjectStore();
+
+  const currentProject = projects.find(p => p.id === projectId);
+  const userRole: UserRole = currentProject?.role || 'viewer';
+  const isViewer = userRole === 'viewer';
+
+  const nodes = useMemo(() => getNodes(), [getNodes, projectId, zoom, panX, panY, selectedNodeId]);
+  const edges = useMemo(() => getEdges(), [getEdges, projectId, zoom, panX, panY, selectedEdgeId]);
+  const lanes = useMemo(() => getLanes(), [getLanes, projectId]);
+  const historyIndex = useMemo(() => getHistoryIndex(), [getHistoryIndex, projectId]);
+  const historyLength = useMemo(() => getHistoryLength(), [getHistoryLength, projectId]);
+
+  const sortedNodes = useMemo(() => {
+    return [...nodes].sort((a, b) => a.layer - b.layer);
+  }, [nodes]);
 
   const selectedNode = nodes.find(n => n.id === selectedNodeId);
+
+  useEffect(() => {
+    if (projectId) {
+      initProjectCanvas(projectId);
+    }
+  }, [projectId, initProjectCanvas]);
 
   const screenToCanvas = useCallback((clientX: number, clientY: number) => {
     if (!svgRef.current) return { x: 0, y: 0 };
@@ -110,11 +137,11 @@ export default function CanvasPage() {
       return;
     }
     
-    if (isDraggingNode && selectedNodeId) {
+    if (isDraggingNode && selectedNodeId && !isViewer) {
       const pos = screenToCanvas(e.clientX, e.clientY);
       moveNode(selectedNodeId, Math.round((pos.x - dragOffset.x) / 10) * 10, Math.round((pos.y - dragOffset.y) / 10) * 10);
     }
-  }, [isPanning, startPan, setPan, isDraggingNode, selectedNodeId, screenToCanvas, dragOffset, moveNode]);
+  }, [isPanning, startPan, setPan, isDraggingNode, selectedNodeId, screenToCanvas, dragOffset, moveNode, isViewer]);
 
   const handleMouseUp = useCallback(() => {
     if (isPanning) {
@@ -130,6 +157,7 @@ export default function CanvasPage() {
   }, [isPanning, isDraggingNode, isConnecting, endConnecting, pushHistory]);
 
   const handleNodeMouseDown = useCallback((e: React.MouseEvent, nodeId: string) => {
+    if (isViewer) return;
     e.stopPropagation();
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
@@ -139,9 +167,10 @@ export default function CanvasPage() {
     const pos = screenToCanvas(e.clientX, e.clientY);
     setDragOffset({ x: pos.x - node.x, y: pos.y - node.y });
     setIsDraggingNode(true);
-  }, [nodes, selectNode, screenToCanvas]);
+  }, [nodes, selectNode, screenToCanvas, isViewer]);
 
   const handleNodeDoubleClick = useCallback((nodeId: string) => {
+    if (isViewer) return;
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
     
@@ -150,24 +179,27 @@ export default function CanvasPage() {
       updateNode(nodeId, { label: newLabel });
       pushHistory();
     }
-  }, [nodes, updateNode, pushHistory]);
+  }, [nodes, updateNode, pushHistory, isViewer]);
 
   const handleConnectorMouseDown = useCallback((e: React.MouseEvent, nodeId: string) => {
+    if (isViewer) return;
     e.stopPropagation();
     startConnecting(nodeId);
-  }, [startConnecting]);
+  }, [startConnecting, isViewer]);
 
   const handleConnectorMouseUp = useCallback((e: React.MouseEvent, nodeId: string) => {
+    if (isViewer) return;
     e.stopPropagation();
     if (isConnecting) {
       finishConnecting(nodeId);
     }
-  }, [isConnecting, finishConnecting]);
+  }, [isConnecting, finishConnecting, isViewer]);
 
   const handleDragStart = useCallback((e: React.DragEvent, type: NodeType) => {
+    if (isViewer) return;
     setDraggedItem(type);
     e.dataTransfer.effectAllowed = 'copy';
-  }, []);
+  }, [isViewer]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -176,7 +208,7 @@ export default function CanvasPage() {
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    if (!draggedItem) return;
+    if (!draggedItem || isViewer) return;
     
     const pos = screenToCanvas(e.clientX, e.clientY);
     const color = colors[Math.floor(Math.random() * colors.length)];
@@ -205,13 +237,13 @@ export default function CanvasPage() {
     });
     
     setDraggedItem(null);
-  }, [draggedItem, screenToCanvas, addNode, colors]);
+  }, [draggedItem, screenToCanvas, addNode, colors, isViewer]);
 
   const handleDelete = useCallback(() => {
-    if (selectedNodeId) {
+    if (selectedNodeId && !isViewer) {
       deleteNode(selectedNodeId);
     }
-  }, [selectedNodeId, deleteNode]);
+  }, [selectedNodeId, deleteNode, isViewer]);
 
   const handleZoomIn = () => setZoom(zoom * 1.2);
   const handleZoomOut = () => setZoom(zoom * 0.8);
@@ -220,10 +252,30 @@ export default function CanvasPage() {
     setPan(0, 0);
   };
 
+  const handleExportPNG = useCallback(() => {
+    if (svgRef.current) {
+      exportPNG(svgRef.current, 'canvas.png');
+    }
+  }, []);
+
+  const handleLayerUp = useCallback(() => {
+    if (selectedNode && !isViewer) {
+      updateNode(selectedNode.id, { layer: selectedNode.layer + 1 });
+      pushHistory();
+    }
+  }, [selectedNode, updateNode, pushHistory, isViewer]);
+
+  const handleLayerDown = useCallback(() => {
+    if (selectedNode && !isViewer) {
+      updateNode(selectedNode.id, { layer: Math.max(1, selectedNode.layer - 1) });
+      pushHistory();
+    }
+  }, [selectedNode, updateNode, pushHistory, isViewer]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedNodeId && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        if (selectedNodeId && !isViewer && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
           deleteNode(selectedNodeId);
         }
       }
@@ -238,7 +290,7 @@ export default function CanvasPage() {
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, deleteNode, undo, redo]);
+  }, [selectedNodeId, deleteNode, undo, redo, isViewer]);
 
   const renderNode = (node: typeof nodes[0]) => {
     const isSelected = node.id === selectedNodeId;
@@ -246,8 +298,9 @@ export default function CanvasPage() {
     
     const commonProps = {
       className: cn(
-        "cursor-move transition-all duration-150",
-        isSelected && "filter drop-shadow-lg"
+        "transition-all duration-150",
+        isSelected && "filter drop-shadow-lg",
+        !isViewer && "cursor-move"
       ),
       fill: node.color,
       stroke: isSelected ? '#4f46e5' : 'rgba(0,0,0,0.1)',
@@ -296,7 +349,7 @@ export default function CanvasPage() {
               fill={node.color}
               stroke={isSelected ? '#4f46e5' : 'rgba(0,0,0,0.1)'}
               strokeWidth={isSelected ? 3 : 2}
-              className="cursor-move"
+              className={cn(!isViewer && "cursor-move")}
               onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
               onDoubleClick={() => handleNodeDoubleClick(node.id)}
             />
@@ -308,7 +361,7 @@ export default function CanvasPage() {
               fill={node.color}
               stroke={isSelected ? '#4f46e5' : 'rgba(0,0,0,0.1)'}
               strokeWidth={isSelected ? 3 : 2}
-              className="cursor-move"
+              className={cn(!isViewer && "cursor-move")}
               onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
               onDoubleClick={() => handleNodeDoubleClick(node.id)}
             />
@@ -348,7 +401,7 @@ export default function CanvasPage() {
             stroke={isSelected ? '#4f46e5' : 'transparent'}
             strokeWidth={isSelected ? 2 : 0}
             strokeDasharray="5,5"
-            className="cursor-move"
+            className={cn(!isViewer && "cursor-move")}
             onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
             onDoubleClick={() => handleNodeDoubleClick(node.id)}
           />
@@ -391,7 +444,7 @@ export default function CanvasPage() {
             </tspan>
           ))}
         </text>
-        {isSelected && (
+        {isSelected && !isViewer && (
           <>
             <circle
               cx={node.x + node.width}
@@ -454,7 +507,7 @@ export default function CanvasPage() {
     
     const path = `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`;
 
-    const isSelected = edge.id === useCanvasStore.getState().selectedEdgeId;
+    const isSelected = edge.id === selectedEdgeId;
 
     return (
       <g key={edge.id}>
@@ -465,8 +518,9 @@ export default function CanvasPage() {
           strokeWidth={isSelected ? 3 : 2}
           strokeDasharray={edge.style === 'dashed' ? '8,4' : 'none'}
           markerEnd={edge.style === 'arrow' ? 'url(#arrowhead)' : ''}
-          className="cursor-pointer transition-all"
+          className={cn(!isViewer && "cursor-pointer transition-all")}
           onClick={(e) => {
+            if (isViewer) return;
             e.stopPropagation();
             selectEdge(edge.id);
             selectNode(null);
@@ -532,7 +586,7 @@ export default function CanvasPage() {
           <div className="flex items-center gap-1">
             <button
               onClick={undo}
-              disabled={historyIndex <= 0}
+              disabled={historyIndex <= 0 || isViewer}
               className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               title="撤销 (Ctrl+Z)"
             >
@@ -540,7 +594,7 @@ export default function CanvasPage() {
             </button>
             <button
               onClick={redo}
-              disabled={historyIndex >= history.length - 1}
+              disabled={historyIndex >= historyLength - 1 || isViewer}
               className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               title="重做 (Ctrl+Shift+Z)"
             >
@@ -583,7 +637,7 @@ export default function CanvasPage() {
           </div>
           
           <div className="flex items-center gap-2">
-            {selectedNodeId && (
+            {selectedNodeId && !isViewer && (
               <button
                 onClick={handleDelete}
                 className="p-2 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
@@ -592,23 +646,33 @@ export default function CanvasPage() {
                 <Trash2 className="w-4 h-4" />
               </button>
             )}
-            <button className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
+            <button 
+              onClick={handleExportPNG}
+              className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+              title="导出PNG"
+            >
               <Download className="w-4 h-4" />
             </button>
           </div>
         </div>
 
         <div className="flex-1 flex overflow-hidden">
-          <div className="w-16 bg-white border-r border-slate-200 flex flex-col items-center py-3 gap-1">
+          <div className={cn(
+            "w-16 bg-white border-r border-slate-200 flex flex-col items-center py-3 gap-1",
+            isViewer && "opacity-50 pointer-events-none"
+          )}>
             {toolbarItems.map((item) => {
               const Icon = item.icon;
               return (
                 <div
                   key={item.type}
-                  draggable
+                  draggable={!isViewer}
                   onDragStart={(e) => handleDragStart(e, item.type)}
                   onDragEnd={() => setDraggedItem(null)}
-                  className="w-12 h-12 flex flex-col items-center justify-center rounded-lg cursor-grab active:cursor-grabbing hover:bg-slate-50 text-slate-600 hover:text-indigo-600 transition-colors group"
+                  className={cn(
+                    "w-12 h-12 flex flex-col items-center justify-center rounded-lg text-slate-600 hover:text-indigo-600 transition-colors group",
+                    !isViewer && "cursor-grab active:cursor-grabbing hover:bg-slate-50"
+                  )}
                   title={`${item.label}（拖拽到画布）`}
                 >
                   <Icon className="w-5 h-5 mb-0.5" />
@@ -623,7 +687,10 @@ export default function CanvasPage() {
               {colors.map((color) => (
                 <div
                   key={color}
-                  className="w-4 h-4 rounded-full cursor-pointer hover:scale-110 transition-transform border-2 border-white shadow-sm"
+                  className={cn(
+                    "w-4 h-4 rounded-full border-2 border-white shadow-sm",
+                    !isViewer && "cursor-pointer hover:scale-110 transition-transform"
+                  )}
                   style={{ backgroundColor: color }}
                 />
               ))}
@@ -678,7 +745,7 @@ export default function CanvasPage() {
                 
                 {renderLanes()}
                 {edges.map(renderEdge)}
-                {nodes.map(renderNode)}
+                {sortedNodes.map(renderNode)}
                 
                 {isConnecting && connectingFrom && (
                   <circle
@@ -697,6 +764,9 @@ export default function CanvasPage() {
               <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                 <Layers className="w-4 h-4" />
                 属性面板
+                {isViewer && (
+                  <span className="text-xs text-slate-400 font-normal ml-auto">只读</span>
+                )}
               </h3>
             </div>
             
@@ -708,9 +778,15 @@ export default function CanvasPage() {
                     <input
                       type="text"
                       value={selectedNode.label}
-                      onChange={(e) => updateNode(selectedNode.id, { label: e.target.value })}
+                      onChange={(e) => !isViewer && updateNode(selectedNode.id, { label: e.target.value })}
                       onBlur={() => pushHistory()}
-                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      disabled={isViewer}
+                      className={cn(
+                        "w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent",
+                        isViewer 
+                          ? "bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed" 
+                          : "border-slate-300"
+                      )}
                     />
                   </div>
                   
@@ -728,12 +804,17 @@ export default function CanvasPage() {
                         <button
                           key={color}
                           onClick={() => {
-                            updateNode(selectedNode.id, { color });
-                            pushHistory();
+                            if (!isViewer) {
+                              updateNode(selectedNode.id, { color });
+                              pushHistory();
+                            }
                           }}
+                          disabled={isViewer}
                           className={cn(
-                            "w-7 h-7 rounded-full border-2 transition-all hover:scale-110",
-                            selectedNode.color === color ? "border-indigo-500 ring-2 ring-indigo-200" : "border-white shadow-sm"
+                            "w-7 h-7 rounded-full border-2 transition-all",
+                            selectedNode.color === color ? "border-indigo-500 ring-2 ring-indigo-200" : "border-white shadow-sm",
+                            !isViewer && "hover:scale-110",
+                            isViewer && "cursor-not-allowed opacity-60"
                           )}
                           style={{ backgroundColor: color }}
                         />
@@ -747,9 +828,15 @@ export default function CanvasPage() {
                       <input
                         type="number"
                         value={Math.round(selectedNode.x)}
-                        onChange={(e) => updateNode(selectedNode.id, { x: Number(e.target.value) })}
+                        onChange={(e) => !isViewer && updateNode(selectedNode.id, { x: Number(e.target.value) })}
                         onBlur={() => pushHistory()}
-                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        disabled={isViewer}
+                        className={cn(
+                          "w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent",
+                          isViewer 
+                            ? "bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed" 
+                            : "border-slate-300"
+                        )}
                       />
                     </div>
                     <div>
@@ -757,9 +844,15 @@ export default function CanvasPage() {
                       <input
                         type="number"
                         value={Math.round(selectedNode.y)}
-                        onChange={(e) => updateNode(selectedNode.id, { y: Number(e.target.value) })}
+                        onChange={(e) => !isViewer && updateNode(selectedNode.id, { y: Number(e.target.value) })}
                         onBlur={() => pushHistory()}
-                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        disabled={isViewer}
+                        className={cn(
+                          "w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent",
+                          isViewer 
+                            ? "bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed" 
+                            : "border-slate-300"
+                        )}
                       />
                     </div>
                   </div>
@@ -770,9 +863,15 @@ export default function CanvasPage() {
                       <input
                         type="number"
                         value={Math.round(selectedNode.width)}
-                        onChange={(e) => updateNode(selectedNode.id, { width: Number(e.target.value) })}
+                        onChange={(e) => !isViewer && updateNode(selectedNode.id, { width: Number(e.target.value) })}
                         onBlur={() => pushHistory()}
-                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        disabled={isViewer}
+                        className={cn(
+                          "w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent",
+                          isViewer 
+                            ? "bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed" 
+                            : "border-slate-300"
+                        )}
                       />
                     </div>
                     <div>
@@ -780,38 +879,58 @@ export default function CanvasPage() {
                       <input
                         type="number"
                         value={Math.round(selectedNode.height)}
-                        onChange={(e) => updateNode(selectedNode.id, { height: Number(e.target.value) })}
+                        onChange={(e) => !isViewer && updateNode(selectedNode.id, { height: Number(e.target.value) })}
                         onBlur={() => pushHistory()}
-                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        disabled={isViewer}
+                        className={cn(
+                          "w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent",
+                          isViewer 
+                            ? "bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed" 
+                            : "border-slate-300"
+                        )}
                       />
                     </div>
                   </div>
                   
                   <div>
-                    <label className="text-xs font-medium text-slate-500 mb-1.5 block">图层</label>
+                    <label className="text-xs font-medium text-slate-500 mb-1.5 block">图层 (layer: {selectedNode.layer})</label>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => updateNode(selectedNode.id, { layer: selectedNode.layer + 1 })}
-                        className="flex-1 px-3 py-1.5 text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                        onClick={handleLayerUp}
+                        disabled={isViewer}
+                        className={cn(
+                          "flex-1 px-3 py-1.5 text-xs rounded-lg transition-colors",
+                          isViewer 
+                            ? "bg-slate-100 text-slate-400 cursor-not-allowed" 
+                            : "text-slate-600 bg-slate-100 hover:bg-slate-200"
+                        )}
                       >
                         上移
                       </button>
                       <button
-                        onClick={() => updateNode(selectedNode.id, { layer: Math.max(1, selectedNode.layer - 1) })}
-                        className="flex-1 px-3 py-1.5 text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                        onClick={handleLayerDown}
+                        disabled={isViewer || selectedNode.layer <= 1}
+                        className={cn(
+                          "flex-1 px-3 py-1.5 text-xs rounded-lg transition-colors",
+                          isViewer || selectedNode.layer <= 1
+                            ? "bg-slate-100 text-slate-400 cursor-not-allowed" 
+                            : "text-slate-600 bg-slate-100 hover:bg-slate-200"
+                        )}
                       >
                         下移
                       </button>
                     </div>
                   </div>
                   
-                  <button
-                    onClick={handleDelete}
-                    className="w-full py-2 text-sm text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    删除节点
-                  </button>
+                  {!isViewer && (
+                    <button
+                      onClick={handleDelete}
+                      className="w-full py-2 text-sm text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      删除节点
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-8">

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -10,10 +11,15 @@ import {
   ChevronLeft,
   Search,
   Bell,
-  User
+  User,
+  Shield,
+  Eye,
+  Edit3
 } from 'lucide-react';
 import { useProjectStore } from '@/store/useProjectStore';
+import { useProjectCanvasStore } from '@/store/useProjectCanvasStore';
 import { cn } from '@/utils/helpers';
+import type { UserRole } from '@/types';
 
 const projectNavItems = [
   { path: 'canvas', label: '画布', icon: Palette },
@@ -23,16 +29,33 @@ const projectNavItems = [
   { path: 'publish', label: '发布', icon: Rocket },
 ];
 
+const roleConfig: Record<UserRole, { label: string; icon: typeof Shield; color: string }> = {
+  admin: { label: '管理员', icon: Shield, color: 'text-indigo-600 bg-indigo-50' },
+  editor: { label: '编辑者', icon: Edit3, color: 'text-emerald-600 bg-emerald-50' },
+  viewer: { label: '查看者', icon: Eye, color: 'text-amber-600 bg-amber-50' },
+};
+
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { id } = useParams<{ id: string }>();
-  const { getCurrentProject, setCurrentProjectId, projects } = useProjectStore();
+  const { projects, setCurrentProjectId } = useProjectStore();
+  const { initProjectCanvas } = useProjectCanvasStore();
   
   const currentProject = projects.find(p => p.id === id);
+  const userRole: UserRole = currentProject?.role || 'viewer';
+  const roleInfo = roleConfig[userRole];
+  const RoleIcon = roleInfo.icon;
   
   const isActive = (path: string) => {
     return location.pathname.includes(path);
   };
+
+  useEffect(() => {
+    if (id) {
+      setCurrentProjectId(id);
+      initProjectCanvas(id);
+    }
+  }, [id, setCurrentProjectId, initProjectCanvas]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -51,7 +74,16 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
               {currentProject?.name.charAt(0)}
             </div>
             <div>
-              <h1 className="text-sm font-semibold text-slate-800">{currentProject?.name}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm font-semibold text-slate-800">{currentProject?.name}</h1>
+                <span className={cn(
+                  "inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded",
+                  roleInfo.color
+                )}>
+                  <RoleIcon className="w-3 h-3" />
+                  {roleInfo.label}
+                </span>
+              </div>
               <p className="text-xs text-slate-500">{currentProject?.nodeCount} 个节点 · {currentProject?.versionCount} 个版本</p>
             </div>
           </div>

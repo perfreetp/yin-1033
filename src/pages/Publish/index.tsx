@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   Rocket,
   Copy,
@@ -25,8 +26,10 @@ import ProjectLayout from '@/components/Layout/ProjectLayout';
 import Button from '@/components/common/Button';
 import Modal from '@/components/common/Modal';
 import { mockPublish, mockChangeLog, mockDataFields, mockMetrics } from '@/data/mockData';
+import { useProjectStore } from '@/store/useProjectStore';
+import { useProjectCanvasStore } from '@/store/useProjectCanvasStore';
 import type { PublishPermission, ChangeLogItem } from '@/types';
-import { cn, formatDate, copyToClipboard, exportToCSV, exportToJSON } from '@/utils/helpers';
+import { cn, formatDate, copyToClipboard, exportToCSV, exportToJSON, exportCanvasToPNG } from '@/utils/helpers';
 
 const permissionOptions: { value: PublishPermission; label: string; icon: React.ReactNode; description: string }[] = [
   {
@@ -95,6 +98,13 @@ const getActionColor = (action: string) => {
 };
 
 export default function Publish() {
+  const { id } = useParams<{ id: string }>();
+  const projects = useProjectStore(state => state.projects);
+  const initProjectCanvas = useProjectCanvasStore(state => state.initProjectCanvas);
+  const projectCanvases = useProjectCanvasStore(state => state.projectCanvases);
+  const projectVersions = useProjectCanvasStore(state => state.projectVersions);
+  const currentProjectId = useProjectCanvasStore(state => state.currentProjectId);
+  
   const [copied, setCopied] = useState(false);
   const [permission, setPermission] = useState<PublishPermission>(mockPublish.permission);
   const [expireOption, setExpireOption] = useState('never');
@@ -102,6 +112,31 @@ export default function Publish() {
   const [publishDescription, setPublishDescription] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [publishSuccess, setPublishSuccess] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    if (id) {
+      initProjectCanvas(id);
+    }
+  }, [id, initProjectCanvas]);
+
+  const currentProject = useMemo(() => {
+    return projects.find(p => p.id === id);
+  }, [projects, id]);
+
+  const isViewer = currentProject?.role === 'viewer';
+
+  const canvasData = useMemo(() => {
+    if (!currentProjectId) return { nodes: [], edges: [], lanes: [] };
+    const canvas = projectCanvases[currentProjectId];
+    return canvas || { nodes: [], edges: [], lanes: [] };
+  }, [projectCanvases, currentProjectId]);
+
+  const latestVersion = useMemo(() => {
+    if (!currentProjectId) return null;
+    const versions = projectVersions[currentProjectId] || [];
+    return versions.length > 0 ? versions[0] : null;
+  }, [projectVersions, currentProjectId]);
 
   const handleCopyLink = async () => {
     try {
@@ -113,8 +148,17 @@ export default function Publish() {
     }
   };
 
-  const handleExportPNG = () => {
-    alert('导出图片功能需要结合画布实现，此处为演示');
+  const handleExportPNG = async () => {
+    try {
+      setExporting(true);
+      const { nodes, edges, lanes } = canvasData;
+      const version = latestVersion?.version || 'current';
+      await exportCanvasToPNG(nodes, edges, lanes, `canvas-${version}.png`);
+    } catch (err) {
+      console.error('导出图片失败:', err);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleExportCSV = () => {
@@ -160,9 +204,13 @@ export default function Publish() {
               <h1 className="text-xl font-bold text-slate-800">发布管理</h1>
               <p className="mt-1 text-sm text-slate-500">管理项目的发布版本和分享设置</p>
             </div>
-            <Button onClick={() => setIsPublishModalOpen(true)} className="gap-2">
+            <Button 
+              onClick={() => setIsPublishModalOpen(true)} 
+              className="gap-2"
+              disabled={isViewer}
+            >
               <Rocket className="w-4 h-4" />
-              发布新版本
+              {isViewer ? '无发布权限' : '发布新版本'}
             </Button>
           </div>
 
@@ -257,17 +305,22 @@ export default function Publish() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-slate-500 mb-2 block">权限设置</label>
+                  <label className="text-xs font-medium text-slate-500 mb-2 block">
+                    权限设置
+                    {isViewer && <span className="ml-2 text-amber-500">（仅查看）</span>}
+                  </label>
                   <div className="space-y-2">
                     {permissionOptions.map((option) => (
                       <button
                         key={option.value}
-                        onClick={() => setPermission(option.value)}
+                        onClick={() => !isViewer && setPermission(option.value)}
+                        disabled={isViewer}
                         className={cn(
                           'w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left',
                           permission === option.value
                             ? 'border-indigo-300 bg-indigo-50/50 ring-1 ring-indigo-200'
-                            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+                          isViewer && 'opacity-60 cursor-not-allowed hover:border-slate-200 hover:bg-transparent'
                         )}
                       >
                         <div className={cn(
@@ -302,17 +355,22 @@ export default function Publish() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-slate-500 mb-2 block">有效期</label>
+                  <label className="text-xs font-medium text-slate-500 mb-2 block">
+                    有效期
+                    {isViewer && <span className="ml-2 text-amber-500">（仅查看）</span>}
+                  </label>
                   <div className="grid grid-cols-4 gap-2">
                     {expireOptions.map((option) => (
                       <button
                         key={option.value}
-                        onClick={() => setExpireOption(option.value)}
+                        onClick={() => !isViewer && setExpireOption(option.value)}
+                        disabled={isViewer}
                         className={cn(
                           'px-3 py-2 text-sm rounded-lg border transition-all',
                           expireOption === option.value
                             ? 'border-indigo-300 bg-indigo-50 text-indigo-600 font-medium'
-                            : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                            : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50',
+                          isViewer && 'opacity-60 cursor-not-allowed hover:border-slate-200 hover:bg-transparent'
                         )}
                       >
                         {option.label}
@@ -334,16 +392,35 @@ export default function Publish() {
               <div className="space-y-3">
                 <button
                   onClick={handleExportPNG}
-                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group"
+                  disabled={exporting}
+                  className={cn(
+                    "w-full flex items-center gap-3 p-4 rounded-lg border transition-all group",
+                    exporting
+                      ? "border-slate-200 opacity-60 cursor-not-allowed"
+                      : "border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/30"
+                  )}
                 >
-                  <div className="p-2.5 bg-slate-100 group-hover:bg-indigo-100 rounded-lg transition-colors">
-                    <Image className="w-5 h-5 text-slate-600 group-hover:text-indigo-600 transition-colors" />
+                  <div className={cn(
+                    "p-2.5 rounded-lg transition-colors",
+                    exporting ? "bg-slate-100" : "bg-slate-100 group-hover:bg-indigo-100"
+                  )}>
+                    {exporting ? (
+                      <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                    ) : (
+                      <Image className={cn("w-5 h-5 transition-colors", 
+                        exporting ? "text-slate-400" : "text-slate-600 group-hover:text-indigo-600"
+                      )} />
+                    )}
                   </div>
                   <div className="flex-1 text-left">
-                    <div className="text-sm font-medium text-slate-800">导出图片</div>
+                    <div className="text-sm font-medium text-slate-800">
+                      {exporting ? '导出中...' : '导出图片'}
+                    </div>
                     <div className="text-xs text-slate-500">PNG 格式，高清画布截图</div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-400 transition-colors" />
+                  {!exporting && (
+                    <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-400 transition-colors" />
+                  )}
                 </button>
 
                 <button
@@ -400,7 +477,7 @@ export default function Publish() {
             <div className="relative">
               <div className="absolute left-5 top-0 bottom-0 w-px bg-slate-200" />
               <div className="space-y-5">
-                {mockChangeLog.map((log: ChangeLogItem, index: number) => (
+                {mockChangeLog.map((log: ChangeLogItem) => (
                   <div key={log.id} className="relative flex gap-4">
                     <div className={cn(
                       'relative z-10 w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0',

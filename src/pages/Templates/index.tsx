@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Funnel, BarChart3, Route, ShoppingCart, Database, Crown, Users, ChevronRight, Sparkles } from 'lucide-react';
 import { mockTemplates } from '@/data/mockData';
 import { useProjectStore } from '@/store/useProjectStore';
+import { useProjectCanvasStore } from '@/store/useProjectCanvasStore';
 import { generateId } from '@/utils/helpers';
 import { cn } from '@/utils/helpers';
 import Button from '@/components/common/Button';
@@ -39,9 +41,11 @@ const categoryColorMap: Record<string, string> = {
 };
 
 export default function Templates() {
+  const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const { addProject } = useProjectStore();
+  const { initProjectCanvas } = useProjectCanvasStore();
 
   const filteredTemplates = useMemo(() => {
     return mockTemplates.filter((template) => {
@@ -67,11 +71,15 @@ export default function Templates() {
       members: [
         { userId: 'user-001', userName: '我', avatar: '', role: 'admin' as const },
       ],
-      nodeCount: template.nodes.length || 0,
+      nodeCount: template.nodes.length,
       versionCount: 1,
     };
     addProject(newProject);
-    alert(`已基于模板"${template.name}"创建项目！`);
+    initProjectCanvas(newProject.id, {
+      nodes: template.nodes.map(node => ({ ...node, id: generateId('node') })),
+      edges: template.edges.map(edge => ({ ...edge, id: generateId('edge') })),
+    });
+    navigate(`/project/${newProject.id}/canvas`);
   };
 
   return (

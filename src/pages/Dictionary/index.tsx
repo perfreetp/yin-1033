@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Search, Plus, Database, Calculator, ChevronRight, X, Hash, Type, Calendar, Check, Info, FileText, Layers } from 'lucide-react';
 import ProjectLayout from '@/components/Layout/ProjectLayout';
 import Button from '@/components/common/Button';
+import Modal from '@/components/common/Modal';
 import { mockDataFields, mockMetrics } from '@/data/mockData';
 import type { DataField, Metric, FieldType } from '@/types';
 import { cn } from '@/utils/helpers';
@@ -26,40 +27,164 @@ const fieldTypeIcons: Record<FieldType, React.ReactNode> = {
   array: <Database className="w-3 h-3" />,
 };
 
+const fieldTypes: FieldType[] = ['string', 'number', 'boolean', 'date', 'object', 'array'];
+
+interface NewFieldForm {
+  name: string;
+  type: FieldType;
+  category: string;
+  description: string;
+  required: boolean;
+  defaultValue: string;
+}
+
+interface NewMetricForm {
+  name: string;
+  category: string;
+  formula: string;
+  meaning: string;
+  unit: string;
+}
+
+const initialFieldForm: NewFieldForm = {
+  name: '',
+  type: 'string',
+  category: '',
+  description: '',
+  required: false,
+  defaultValue: '',
+};
+
+const initialMetricForm: NewMetricForm = {
+  name: '',
+  category: '',
+  formula: '',
+  meaning: '',
+  unit: '',
+};
+
 export default function Dictionary() {
   const [activeTab, setActiveTab] = useState<TabType>('fields');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedField, setSelectedField] = useState<DataField | null>(null);
   const [selectedMetric, setSelectedMetric] = useState<Metric | null>(null);
+  const [fields, setFields] = useState<DataField[]>(mockDataFields);
+  const [metrics, setMetrics] = useState<Metric[]>(mockMetrics);
+  const [isFieldModalOpen, setIsFieldModalOpen] = useState(false);
+  const [isMetricModalOpen, setIsMetricModalOpen] = useState(false);
+  const [fieldForm, setFieldForm] = useState<NewFieldForm>(initialFieldForm);
+  const [metricForm, setMetricForm] = useState<NewMetricForm>(initialMetricForm);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof NewFieldForm, string>>>({});
+  const [metricErrors, setMetricErrors] = useState<Partial<Record<keyof NewMetricForm, string>>>({});
 
   const fieldCategories = useMemo(() => {
-    const categories = new Set(mockDataFields.map(f => f.category));
+    const categories = new Set(fields.map(f => f.category));
     return ['all', ...Array.from(categories)];
-  }, []);
+  }, [fields]);
 
   const metricCategories = useMemo(() => {
-    const categories = new Set(mockMetrics.map(m => m.category));
+    const categories = new Set(metrics.map(m => m.category));
     return ['all', ...Array.from(categories)];
-  }, []);
+  }, [metrics]);
 
   const filteredFields = useMemo(() => {
-    return mockDataFields.filter(field => {
+    return fields.filter(field => {
       const matchesSearch = field.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         field.description.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = selectedCategory === 'all' || field.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [searchQuery, selectedCategory]);
+  }, [fields, searchQuery, selectedCategory]);
 
   const filteredMetrics = useMemo(() => {
-    return mockMetrics.filter(metric => {
+    return metrics.filter(metric => {
       const matchesSearch = metric.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         metric.meaning.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = selectedCategory === 'all' || metric.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [searchQuery, selectedCategory]);
+  }, [metrics, searchQuery, selectedCategory]);
+
+  const validateFieldForm = (): boolean => {
+    const errors: Partial<Record<keyof NewFieldForm, string>> = {};
+    if (!fieldForm.name.trim()) {
+      errors.name = '字段名称不能为空';
+    }
+    if (!fieldForm.category.trim()) {
+      errors.category = '所属分类不能为空';
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const validateMetricForm = (): boolean => {
+    const errors: Partial<Record<keyof NewMetricForm, string>> = {};
+    if (!metricForm.name.trim()) {
+      errors.name = '指标名称不能为空';
+    }
+    if (!metricForm.category.trim()) {
+      errors.category = '所属分类不能为空';
+    }
+    setMetricErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleAddField = () => {
+    if (!validateFieldForm()) return;
+
+    const newField: DataField = {
+      id: `field-${Date.now()}`,
+      name: fieldForm.name.trim(),
+      type: fieldForm.type,
+      description: fieldForm.description.trim() || '暂无描述',
+      category: fieldForm.category.trim(),
+      relatedMetrics: [],
+      required: fieldForm.required,
+      defaultValue: fieldForm.defaultValue.trim() || undefined,
+    };
+
+    setFields(prev => [newField, ...prev]);
+    setSelectedField(newField);
+    setSelectedMetric(null);
+    setIsFieldModalOpen(false);
+    setFieldForm(initialFieldForm);
+    setFieldErrors({});
+    setSelectedCategory('all');
+  };
+
+  const handleAddMetric = () => {
+    if (!validateMetricForm()) return;
+
+    const newMetric: Metric = {
+      id: `metric-${Date.now()}`,
+      name: metricForm.name.trim(),
+      formula: metricForm.formula.trim() || '暂无公式',
+      meaning: metricForm.meaning.trim() || '暂无含义',
+      category: metricForm.category.trim(),
+      unit: metricForm.unit.trim() || undefined,
+    };
+
+    setMetrics(prev => [newMetric, ...prev]);
+    setSelectedMetric(newMetric);
+    setSelectedField(null);
+    setIsMetricModalOpen(false);
+    setMetricForm(initialMetricForm);
+    setMetricErrors({});
+    setSelectedCategory('all');
+  };
+
+  const openFieldModal = () => {
+    setFieldForm(initialFieldForm);
+    setFieldErrors({});
+    setIsFieldModalOpen(true);
+  };
+
+  const openMetricModal = () => {
+    setMetricForm(initialMetricForm);
+    setMetricErrors({});
+    setIsMetricModalOpen(true);
+  };
 
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
@@ -111,10 +236,10 @@ export default function Dictionary() {
                     : "bg-slate-100 text-slate-500"
                 )}>
                   {category === 'all'
-                    ? (activeTab === 'fields' ? mockDataFields.length : mockMetrics.length)
+                    ? (activeTab === 'fields' ? fields.length : metrics.length)
                     : (activeTab === 'fields'
-                      ? mockDataFields.filter(f => f.category === category).length
-                      : mockMetrics.filter(m => m.category === category).length)
+                      ? fields.filter(f => f.category === category).length
+                      : metrics.filter(m => m.category === category).length)
                   }
                 </span>
               </button>
@@ -173,7 +298,7 @@ export default function Dictionary() {
                     </button>
                   )}
                 </div>
-                <Button size="sm" className="gap-1.5">
+                <Button size="sm" className="gap-1.5" onClick={activeTab === 'fields' ? openFieldModal : openMetricModal}>
                   <Plus className="w-4 h-4" />
                   {activeTab === 'fields' ? '新增字段' : '新增指标'}
                 </Button>
@@ -406,7 +531,7 @@ export default function Dictionary() {
                         </label>
                         <div className="mt-2 space-y-2">
                           {selectedField.relatedMetrics.map(metricId => {
-                            const metric = mockMetrics.find(m => m.id === metricId);
+                            const metric = metrics.find(m => m.id === metricId);
                             if (!metric) return null;
                             return (
                               <div
@@ -481,7 +606,7 @@ export default function Dictionary() {
                         相关字段
                       </label>
                       <div className="mt-2 space-y-2">
-                        {mockDataFields
+                        {fields
                           .filter(f => f.relatedMetrics.includes(selectedMetric.id))
                           .map(field => (
                             <div
@@ -505,7 +630,7 @@ export default function Dictionary() {
                               </div>
                             </div>
                           ))}
-                        {mockDataFields.filter(f => f.relatedMetrics.includes(selectedMetric.id)).length === 0 && (
+                        {fields.filter(f => f.relatedMetrics.includes(selectedMetric.id)).length === 0 && (
                           <p className="text-sm text-slate-400">暂无关联字段</p>
                         )}
                       </div>
@@ -533,6 +658,254 @@ export default function Dictionary() {
           )}
         </aside>
       </div>
+
+      <Modal
+        isOpen={isFieldModalOpen}
+        onClose={() => setIsFieldModalOpen(false)}
+        title="新增字段"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              字段名称 <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={fieldForm.name}
+              onChange={(e) => setFieldForm(prev => ({ ...prev, name: e.target.value }))}
+              placeholder="请输入字段名称"
+              className={cn(
+                "w-full px-3 py-2 text-sm border rounded-lg outline-none transition-all",
+                fieldErrors.name
+                  ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                  : "border-slate-200 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              )}
+            />
+            {fieldErrors.name && (
+              <p className="mt-1 text-xs text-rose-500">{fieldErrors.name}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              字段类型
+            </label>
+            <select
+              value={fieldForm.type}
+              onChange={(e) => setFieldForm(prev => ({ ...prev, type: e.target.value as FieldType }))}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all"
+            >
+              {fieldTypes.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              所属分类 <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={fieldForm.category}
+              onChange={(e) => setFieldForm(prev => ({ ...prev, category: e.target.value }))}
+              placeholder="请输入分类名称，可输入新分类或选择已有分类"
+              list="field-categories"
+              className={cn(
+                "w-full px-3 py-2 text-sm border rounded-lg outline-none transition-all",
+                fieldErrors.category
+                  ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                  : "border-slate-200 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              )}
+            />
+            <datalist id="field-categories">
+              {fieldCategories.filter(c => c !== 'all').map(cat => (
+                <option key={cat} value={cat} />
+              ))}
+            </datalist>
+            {fieldErrors.category && (
+              <p className="mt-1 text-xs text-rose-500">{fieldErrors.category}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              字段描述
+            </label>
+            <textarea
+              value={fieldForm.description}
+              onChange={(e) => setFieldForm(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="请输入字段描述"
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all resize-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">
+                是否必填
+              </label>
+              <p className="text-xs text-slate-400 mt-0.5">该字段是否为必填项</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFieldForm(prev => ({ ...prev, required: !prev.required }))}
+              className={cn(
+                "relative w-11 h-6 rounded-full transition-colors",
+                fieldForm.required ? "bg-indigo-600" : "bg-slate-200"
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform",
+                  fieldForm.required ? "translate-x-5" : "translate-x-0"
+                )}
+              />
+            </button>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              默认值 <span className="text-slate-400 font-normal">（可选）</span>
+            </label>
+            <input
+              type="text"
+              value={fieldForm.defaultValue}
+              onChange={(e) => setFieldForm(prev => ({ ...prev, defaultValue: e.target.value }))}
+              placeholder="请输入默认值"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsFieldModalOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleAddField}
+            >
+              确认新增
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isMetricModalOpen}
+        onClose={() => setIsMetricModalOpen(false)}
+        title="新增指标"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              指标名称 <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={metricForm.name}
+              onChange={(e) => setMetricForm(prev => ({ ...prev, name: e.target.value }))}
+              placeholder="请输入指标名称"
+              className={cn(
+                "w-full px-3 py-2 text-sm border rounded-lg outline-none transition-all",
+                metricErrors.name
+                  ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                  : "border-slate-200 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              )}
+            />
+            {metricErrors.name && (
+              <p className="mt-1 text-xs text-rose-500">{metricErrors.name}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              所属分类 <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={metricForm.category}
+              onChange={(e) => setMetricForm(prev => ({ ...prev, category: e.target.value }))}
+              placeholder="请输入分类名称"
+              list="metric-categories"
+              className={cn(
+                "w-full px-3 py-2 text-sm border rounded-lg outline-none transition-all",
+                metricErrors.category
+                  ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                  : "border-slate-200 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              )}
+            />
+            <datalist id="metric-categories">
+              {metricCategories.filter(c => c !== 'all').map(cat => (
+                <option key={cat} value={cat} />
+              ))}
+            </datalist>
+            {metricErrors.category && (
+              <p className="mt-1 text-xs text-rose-500">{metricErrors.category}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              计算公式
+            </label>
+            <input
+              type="text"
+              value={metricForm.formula}
+              onChange={(e) => setMetricForm(prev => ({ ...prev, formula: e.target.value }))}
+              placeholder="请输入计算公式"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              业务含义
+            </label>
+            <textarea
+              value={metricForm.meaning}
+              onChange={(e) => setMetricForm(prev => ({ ...prev, meaning: e.target.value }))}
+              placeholder="请输入业务含义"
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              单位 <span className="text-slate-400 font-normal">（可选）</span>
+            </label>
+            <input
+              type="text"
+              value={metricForm.unit}
+              onChange={(e) => setMetricForm(prev => ({ ...prev, unit: e.target.value }))}
+              placeholder="请输入单位，如：人、元、%"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsMetricModalOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleAddMetric}
+            >
+              确认新增
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </ProjectLayout>
   );
 }
