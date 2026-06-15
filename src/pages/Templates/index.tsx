@@ -58,6 +58,24 @@ export default function Templates() {
   }, [activeCategory, searchQuery]);
 
   const handleUseTemplate = (template: Template) => {
+    if (template.nodes.length === 0 && template.edges.length === 0) {
+      alert('该模板暂无画布内容，无法使用');
+      return;
+    }
+
+    const nodeIdMap: Record<string, string> = {};
+    const newNodes = template.nodes.map(node => {
+      const newId = generateId('node');
+      nodeIdMap[node.id] = newId;
+      return { ...node, id: newId };
+    });
+    const newEdges = template.edges.map(edge => ({
+      ...edge,
+      id: generateId('edge'),
+      source: nodeIdMap[edge.source] || edge.source,
+      target: nodeIdMap[edge.target] || edge.target,
+    }));
+
     const newProject = {
       id: generateId('proj'),
       name: `${template.name} - 副本`,
@@ -71,13 +89,13 @@ export default function Templates() {
       members: [
         { userId: 'user-001', userName: '我', avatar: '', role: 'admin' as const },
       ],
-      nodeCount: template.nodes.length,
+      nodeCount: newNodes.length,
       versionCount: 1,
     };
     addProject(newProject);
     initProjectCanvas(newProject.id, {
-      nodes: template.nodes.map(node => ({ ...node, id: generateId('node') })),
-      edges: template.edges.map(edge => ({ ...edge, id: generateId('edge') })),
+      nodes: newNodes,
+      edges: newEdges,
     });
     navigate(`/project/${newProject.id}/canvas`);
   };

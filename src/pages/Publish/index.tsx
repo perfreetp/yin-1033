@@ -101,6 +101,7 @@ export default function Publish() {
   const { id } = useParams<{ id: string }>();
   const projects = useProjectStore(state => state.projects);
   const initProjectCanvas = useProjectCanvasStore(state => state.initProjectCanvas);
+  const createVersion = useProjectCanvasStore(state => state.createVersion);
   const projectCanvases = useProjectCanvasStore(state => state.projectCanvases);
   const projectVersions = useProjectCanvasStore(state => state.projectVersions);
   const currentProjectId = useProjectCanvasStore(state => state.currentProjectId);
@@ -113,6 +114,7 @@ export default function Publish() {
   const [publishing, setPublishing] = useState(false);
   const [publishSuccess, setPublishSuccess] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [changeLogs, setChangeLogs] = useState<ChangeLogItem[]>(mockChangeLog);
 
   useEffect(() => {
     if (id) {
@@ -167,22 +169,30 @@ export default function Publish() {
       ...mockDataFields.map(f => ['字段', f.name, f.description, f.category]),
       ...mockMetrics.map(m => ['指标', m.name, m.meaning, m.category]),
     ];
-    exportToCSV(headers, rows, `data-dictionary-${mockPublish.version}.csv`);
+    exportToCSV(headers, rows, `data-dictionary-${latestVersion?.version || 'current'}.csv`);
   };
 
   const handleExportJSON = () => {
     const data = {
-      version: mockPublish.version,
-      publishDate: mockPublish.createdAt,
+      version: latestVersion?.version || 'v1.0.0',
+      publishDate: latestVersion?.createdAt || new Date().toISOString(),
       fields: mockDataFields,
       metrics: mockMetrics,
     };
-    exportToJSON(data, `data-dictionary-${mockPublish.version}.json`);
+    exportToJSON(data, `data-dictionary-${latestVersion?.version || 'current'}.json`);
   };
 
   const handlePublish = () => {
     setPublishing(true);
     setTimeout(() => {
+      const newVersion = createVersion(publishDescription.trim() || '发布新版本');
+      setChangeLogs(prev => [{
+        id: `cl-${Date.now()}`,
+        action: '发布版本',
+        user: '我',
+        timestamp: new Date().toISOString(),
+        description: `发布版本 ${newVersion.version}`,
+      }, ...prev]);
       setPublishing(false);
       setPublishSuccess(true);
       setTimeout(() => {
@@ -190,7 +200,7 @@ export default function Publish() {
         setIsPublishModalOpen(false);
         setPublishDescription('');
       }, 1500);
-    }, 1500);
+    }, 800);
   };
 
   const currentPermission = permissionOptions.find(p => p.value === permission);
@@ -223,12 +233,12 @@ export default function Publish() {
                   </div>
                   <span className="text-sm font-medium text-white/80">当前发布版本</span>
                 </div>
-                <div className="text-3xl font-bold mb-2">{mockPublish.version}</div>
-                <p className="text-sm text-white/70 max-w-md">{mockPublish.description}</p>
+                <div className="text-3xl font-bold mb-2">{latestVersion?.version || 'v1.0.0'}</div>
+                <p className="text-sm text-white/70 max-w-md">{latestVersion?.description || '暂无发布'}</p>
               </div>
               <div className="text-right">
                 <div className="text-xs text-white/60 mb-1">发布时间</div>
-                <div className="text-sm font-medium">{formatDate(mockPublish.createdAt)}</div>
+                <div className="text-sm font-medium">{formatDate(latestVersion?.createdAt || new Date().toISOString())}</div>
               </div>
             </div>
             <div className="mt-6 pt-4 border-t border-white/20 flex items-center justify-between">
@@ -470,14 +480,14 @@ export default function Publish() {
               </div>
               <h3 className="text-sm font-semibold text-slate-800">变更记录</h3>
               <span className="ml-auto text-xs text-slate-400">
-                共 {mockChangeLog.length} 条记录
+                共 {changeLogs.length} 条记录
               </span>
             </div>
 
             <div className="relative">
               <div className="absolute left-5 top-0 bottom-0 w-px bg-slate-200" />
               <div className="space-y-5">
-                {mockChangeLog.map((log: ChangeLogItem) => (
+                {changeLogs.map((log: ChangeLogItem) => (
                   <div key={log.id} className="relative flex gap-4">
                     <div className={cn(
                       'relative z-10 w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0',

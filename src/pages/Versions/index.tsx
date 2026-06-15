@@ -18,6 +18,7 @@ import ProjectLayout from '@/components/Layout/ProjectLayout';
 import Button from '@/components/common/Button';
 import Modal from '@/components/common/Modal';
 import { useProjectCanvasStore } from '@/store/useProjectCanvasStore';
+import { useProjectStore } from '@/store/useProjectStore';
 import type { Version } from '@/types';
 import { cn, formatDate, formatRelativeTime } from '@/utils/helpers';
 
@@ -25,6 +26,9 @@ type ViewMode = 'detail' | 'compare';
 
 export default function Versions() {
   const { id } = useParams<{ id: string }>();
+  const projects = useProjectStore(state => state.projects);
+  const currentProject = useMemo(() => projects.find(p => p.id === id), [projects, id]);
+  const isViewer = currentProject?.role === 'viewer';
   const initProjectCanvas = useProjectCanvasStore(state => state.initProjectCanvas);
   const createVersion = useProjectCanvasStore(state => state.createVersion);
   const restoreVersion = useProjectCanvasStore(state => state.restoreVersion);
@@ -139,9 +143,9 @@ export default function Versions() {
                 {sortedVersions.length} 个版本
               </span>
             </div>
-            <Button size="sm" className="w-full gap-1.5" onClick={handleCreateVersion}>
+            <Button size="sm" className="w-full gap-1.5" onClick={handleCreateVersion} disabled={isViewer}>
               <Plus className="w-4 h-4" />
-              创建版本
+              {isViewer ? '仅查看' : '创建版本'}
             </Button>
           </div>
 
@@ -239,10 +243,10 @@ export default function Versions() {
                         </button>
                         <button
                           onClick={(e) => handleRestore(version, e)}
-                          disabled={isCurrent}
+                          disabled={isCurrent || isViewer}
                           className={cn(
                             "flex-1 flex items-center justify-center gap-1 py-1.5 text-xs rounded-md transition-colors",
-                            isCurrent
+                            (isCurrent || isViewer)
                               ? "text-slate-300 cursor-not-allowed"
                               : "text-slate-500 hover:text-amber-600 hover:bg-amber-50"
                           )}
@@ -333,6 +337,7 @@ export default function Versions() {
                               variant="secondary"
                               onClick={() => handleRestore(selectedVersion, { stopPropagation: () => {} } as React.MouseEvent)}
                               className="gap-1.5"
+                              disabled={isViewer}
                             >
                               <RotateCcw className="w-4 h-4" />
                               恢复此版本

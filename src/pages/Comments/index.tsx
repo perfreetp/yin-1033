@@ -1,8 +1,10 @@
 import { useState, useMemo, useRef } from 'react';
-import { MessageSquare, Reply, CheckCircle2, Clock, AtSign, Send, Filter, X } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { MessageSquare, Reply, CheckCircle2, Clock, AtSign, Send, Filter, X, Eye } from 'lucide-react';
 import ProjectLayout from '@/components/Layout/ProjectLayout';
 import Button from '@/components/common/Button';
 import { mockComments, mockUsers } from '@/data/mockData';
+import { useProjectStore } from '@/store/useProjectStore';
 import type { Comment } from '@/types';
 import { cn, formatRelativeTime, generateId } from '@/utils/helpers';
 
@@ -15,11 +17,13 @@ function CommentItem({
   depth = 0,
   onReply,
   onResolve,
+  isViewer = false,
 }: {
   comment: Comment;
   depth?: number;
   onReply: (commentId: string) => void;
   onResolve: (commentId: string) => void;
+  isViewer?: boolean;
 }) {
   const [showReplies, setShowReplies] = useState(true);
   const user = mockUsers.find(u => u.id === comment.userId);
@@ -78,29 +82,33 @@ function CommentItem({
               {renderContentWithMentions(comment.content)}
             </p>
             <div className="mt-3 flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onReply(comment.id)}
-                className="h-7 px-2 text-xs"
-              >
-                <Reply className="w-3.5 h-3.5" />
-                回复
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onResolve(comment.id)}
-                className={cn(
-                  "h-7 px-2 text-xs",
-                  comment.resolved
-                    ? "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                    : "text-slate-500"
-                )}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                {comment.resolved ? '取消解决' : '标记解决'}
-              </Button>
+              {!isViewer && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onReply(comment.id)}
+                  className="h-7 px-2 text-xs"
+                >
+                  <Reply className="w-3.5 h-3.5" />
+                  回复
+                </Button>
+              )}
+              {!isViewer && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onResolve(comment.id)}
+                  className={cn(
+                    "h-7 px-2 text-xs",
+                    comment.resolved
+                      ? "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                      : "text-slate-500"
+                  )}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {comment.resolved ? '取消解决' : '标记解决'}
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -115,6 +123,7 @@ function CommentItem({
               depth={depth + 1}
               onReply={onReply}
               onResolve={onResolve}
+              isViewer={isViewer}
             />
           ))}
         </div>
@@ -124,6 +133,11 @@ function CommentItem({
 }
 
 export default function Comments() {
+  const { id } = useParams<{ id: string }>();
+  const projects = useProjectStore(state => state.projects);
+  const currentProject = useMemo(() => projects.find(p => p.id === id), [projects, id]);
+  const isViewer = currentProject?.role === 'viewer';
+
   const [comments, setComments] = useState<Comment[]>(mockComments);
   const [filter, setFilter] = useState<FilterType>('all');
   const [inputValue, setInputValue] = useState('');
@@ -393,6 +407,7 @@ export default function Comments() {
                     comment={comment}
                     onReply={handleReply}
                     onResolve={handleResolve}
+                    isViewer={isViewer}
                   />
                 ))
               ) : (
@@ -418,74 +433,87 @@ export default function Comments() {
           </div>
 
           <div className="flex-1 p-4 flex flex-col">
-            {replyToComment && (
-              <div className="mb-3 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2 text-xs text-indigo-600">
-                    <Reply className="w-3.5 h-3.5" />
-                    回复 {replyToComment.userName}
+            {isViewer ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center py-8 px-4">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3">
+                    <Eye className="w-6 h-6 text-slate-400" />
                   </div>
-                  <button
-                    onClick={() => setReplyToId(null)}
-                    className="text-indigo-400 hover:text-indigo-600"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+                  <p className="text-sm text-slate-500">您是查看者，无法发表评论</p>
                 </div>
-                <p className="mt-1 text-xs text-indigo-500/70 line-clamp-2">
-                  {replyToComment.content}
-                </p>
               </div>
-            )}
-
-            <div className="relative flex-1">
-              <textarea
-                ref={textareaRef}
-                value={inputValue}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder="输入评论内容，按 @ 提及成员..."
-                className="w-full h-40 p-3 text-sm border border-slate-200 rounded-lg resize-none focus:outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all"
-              />
-
-              {showMentionList && filteredUsers.length > 0 && (
-                <div className="absolute z-10 w-56 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-60 overflow-y-auto">
-                  {filteredUsers.map(user => {
-                    const userIndex = mockUsers.findIndex(u => u.id === user.id);
-                    return (
-                      <button
-                        key={user.id}
-                        onClick={() => handleUserSelect(user)}
-                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-indigo-50 text-left transition-colors"
-                      >
-                        <div
-                          className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium"
-                          style={{
-                            background: `linear-gradient(135deg, hsl(${userIndex * 60}, 70%, 60%), hsl(${userIndex * 60 + 30}, 70%, 50%))`,
-                          }}
-                        >
-                          {user.name.charAt(0)}
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-slate-700">{user.name}</div>
-                          <div className="text-xs text-slate-400">{user.role}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
+            ) : (
+            <>
+              {replyToComment && (
+                <div className="mb-3 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs text-indigo-600">
+                      <Reply className="w-3.5 h-3.5" />
+                      回复 {replyToComment.userName}
+                    </div>
+                    <button
+                      onClick={() => setReplyToId(null)}
+                      className="text-indigo-400 hover:text-indigo-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-indigo-500/70 line-clamp-2">
+                    {replyToComment.content}
+                  </p>
                 </div>
               )}
-            </div>
 
-            <div className="mt-3 flex items-center justify-between">
-              <div className="text-xs text-slate-400">
-                按 Enter 发送，Shift+Enter 换行
+              <div className="relative flex-1">
+                <textarea
+                  ref={textareaRef}
+                  value={inputValue}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder="输入评论内容，按 @ 提及成员..."
+                  className="w-full h-40 p-3 text-sm border border-slate-200 rounded-lg resize-none focus:outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all"
+                />
+
+                {showMentionList && filteredUsers.length > 0 && (
+                  <div className="absolute z-10 w-56 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-60 overflow-y-auto">
+                    {filteredUsers.map(user => {
+                      const userIndex = mockUsers.findIndex(u => u.id === user.id);
+                      return (
+                        <button
+                          key={user.id}
+                          onClick={() => handleUserSelect(user)}
+                          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-indigo-50 text-left transition-colors"
+                        >
+                          <div
+                            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium"
+                            style={{
+                              background: `linear-gradient(135deg, hsl(${userIndex * 60}, 70%, 60%), hsl(${userIndex * 60 + 30}, 70%, 50%))`,
+                            }}
+                          >
+                            {user.name.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-slate-700">{user.name}</div>
+                            <div className="text-xs text-slate-400">{user.role}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <Button onClick={handleSubmit} disabled={!inputValue.trim()} size="sm">
-                <Send className="w-4 h-4" />
-                发送
-              </Button>
-            </div>
+
+              <div className="mt-3 flex items-center justify-between">
+                <div className="text-xs text-slate-400">
+                  按 Enter 发送，Shift+Enter 换行
+                </div>
+                <Button onClick={handleSubmit} disabled={!inputValue.trim()} size="sm">
+                  <Send className="w-4 h-4" />
+                  发送
+                </Button>
+              </div>
+            </>
+            )}
 
             <div className="mt-6 pt-4 border-t border-slate-100">
               <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">

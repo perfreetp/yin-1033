@@ -111,6 +111,19 @@ export const useProjectCanvasStore = create<ProjectCanvasState>((set, get) => ({
         edges: data?.edges || [],
         lanes: data?.lanes || [],
       };
+      const initialVersion: Version = {
+        id: generateId('ver'),
+        version: 'v1.0.0',
+        createdAt: new Date().toISOString(),
+        author: '我',
+        description: '初始版本',
+        snapshot: {
+          nodes: JSON.parse(JSON.stringify(canvasData.nodes)),
+          edges: JSON.parse(JSON.stringify(canvasData.edges)),
+          lanes: JSON.parse(JSON.stringify(canvasData.lanes)),
+        },
+      };
+
       return {
         projectCanvases: {
           ...state.projectCanvases,
@@ -126,7 +139,7 @@ export const useProjectCanvasStore = create<ProjectCanvasState>((set, get) => ({
         },
         projectVersions: {
           ...state.projectVersions,
-          [projectId]: state.projectVersions[projectId] || [],
+          [projectId]: state.projectVersions[projectId] || [initialVersion],
         },
         currentProjectId: projectId,
       };

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, Plus, Database, Calculator, ChevronRight, X, Hash, Type, Calendar, Check, Info, FileText, Layers } from 'lucide-react';
+import { Search, Plus, Database, Calculator, ChevronRight, X, Hash, Type, Calendar, Check, Info, FileText, Layers, Pencil } from 'lucide-react';
 import ProjectLayout from '@/components/Layout/ProjectLayout';
 import Button from '@/components/common/Button';
 import Modal from '@/components/common/Modal';
@@ -77,6 +77,10 @@ export default function Dictionary() {
   const [metricForm, setMetricForm] = useState<NewMetricForm>(initialMetricForm);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof NewFieldForm, string>>>({});
   const [metricErrors, setMetricErrors] = useState<Partial<Record<keyof NewMetricForm, string>>>({});
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [editingMetricId, setEditingMetricId] = useState<string | null>(null);
+  const [editFieldForm, setEditFieldForm] = useState<Partial<DataField>>({});
+  const [editMetricForm, setEditMetricForm] = useState<Partial<Metric>>({});
 
   const fieldCategories = useMemo(() => {
     const categories = new Set(fields.map(f => f.category));
@@ -186,22 +190,98 @@ export default function Dictionary() {
     setIsMetricModalOpen(true);
   };
 
+  const startEditField = () => {
+    if (!selectedField) return;
+    setEditingFieldId(selectedField.id);
+    setEditFieldForm({
+      name: selectedField.name,
+      category: selectedField.category,
+      description: selectedField.description,
+      required: selectedField.required,
+      defaultValue: selectedField.defaultValue,
+    });
+  };
+
+  const saveEditField = () => {
+    if (!editingFieldId || !editFieldForm.name?.trim()) return;
+    setFields(prev => prev.map(f =>
+      f.id === editingFieldId
+        ? { ...f, name: editFieldForm.name!, category: editFieldForm.category || f.category, description: editFieldForm.description || f.description, required: editFieldForm.required ?? f.required, defaultValue: editFieldForm.defaultValue }
+        : f
+    ));
+    setSelectedField(prev => prev && prev.id === editingFieldId
+      ? { ...prev, name: editFieldForm.name!, category: editFieldForm.category || prev.category, description: editFieldForm.description || prev.description, required: editFieldForm.required ?? prev.required, defaultValue: editFieldForm.defaultValue }
+      : prev
+    );
+    setEditingFieldId(null);
+    setEditFieldForm({});
+  };
+
+  const cancelEditField = () => {
+    setEditingFieldId(null);
+    setEditFieldForm({});
+  };
+
+  const startEditMetric = () => {
+    if (!selectedMetric) return;
+    setEditingMetricId(selectedMetric.id);
+    setEditMetricForm({
+      name: selectedMetric.name,
+      category: selectedMetric.category,
+      formula: selectedMetric.formula,
+      meaning: selectedMetric.meaning,
+      unit: selectedMetric.unit,
+    });
+  };
+
+  const saveEditMetric = () => {
+    if (!editingMetricId || !editMetricForm.name?.trim()) return;
+    setMetrics(prev => prev.map(m =>
+      m.id === editingMetricId
+        ? { ...m, name: editMetricForm.name!, category: editMetricForm.category || m.category, formula: editMetricForm.formula || m.formula, meaning: editMetricForm.meaning || m.meaning, unit: editMetricForm.unit }
+        : m
+    ));
+    setSelectedMetric(prev => prev && prev.id === editingMetricId
+      ? { ...prev, name: editMetricForm.name!, category: editMetricForm.category || prev.category, formula: editMetricForm.formula || prev.formula, meaning: editMetricForm.meaning || prev.meaning, unit: editMetricForm.unit }
+      : prev
+    );
+    setEditingMetricId(null);
+    setEditMetricForm({});
+  };
+
+  const cancelEditMetric = () => {
+    setEditingMetricId(null);
+    setEditMetricForm({});
+  };
+
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
     setSelectedCategory('all');
     setSelectedField(null);
     setSelectedMetric(null);
     setSearchQuery('');
+    setEditingFieldId(null);
+    setEditingMetricId(null);
+    setEditFieldForm({});
+    setEditMetricForm({});
   };
 
   const handleFieldClick = (field: DataField) => {
     setSelectedField(field);
     setSelectedMetric(null);
+    setEditingFieldId(null);
+    setEditingMetricId(null);
+    setEditFieldForm({});
+    setEditMetricForm({});
   };
 
   const handleMetricClick = (metric: Metric) => {
     setSelectedMetric(metric);
     setSelectedField(null);
+    setEditingFieldId(null);
+    setEditingMetricId(null);
+    setEditFieldForm({});
+    setEditMetricForm({});
   };
 
   const categories = activeTab === 'fields' ? fieldCategories : metricCategories;
@@ -438,15 +518,44 @@ export default function Dictionary() {
             <>
               <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-slate-800">详情信息</h2>
-                <button
-                  onClick={() => {
-                    setSelectedField(null);
-                    setSelectedMetric(null);
-                  }}
-                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  {editingFieldId || editingMetricId ? (
+                    <>
+                      <button
+                        onClick={editingFieldId ? saveEditField : saveEditMetric}
+                        className="px-2.5 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md transition-colors"
+                      >
+                        保存
+                      </button>
+                      <button
+                        onClick={editingFieldId ? cancelEditField : cancelEditMetric}
+                        className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
+                      >
+                        取消
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={selectedField ? startEditField : startEditMetric}
+                      className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setSelectedField(null);
+                      setSelectedMetric(null);
+                      setEditingFieldId(null);
+                      setEditingMetricId(null);
+                      setEditFieldForm({});
+                      setEditMetricForm({});
+                    }}
+                    className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-4">
@@ -456,9 +565,18 @@ export default function Dictionary() {
                       <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
                         字段名称
                       </label>
-                      <div className="mt-1.5 text-sm font-semibold text-slate-800 font-mono">
-                        {selectedField.name}
-                      </div>
+                      {editingFieldId ? (
+                        <input
+                          type="text"
+                          value={editFieldForm.name || ''}
+                          onChange={(e) => setEditFieldForm(prev => ({ ...prev, name: e.target.value }))}
+                          className="mt-1.5 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all"
+                        />
+                      ) : (
+                        <div className="mt-1.5 text-sm font-semibold text-slate-800 font-mono">
+                          {selectedField.name}
+                        </div>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -480,16 +598,36 @@ export default function Dictionary() {
                         <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
                           是否必填
                         </label>
-                        <div className="mt-1.5">
-                          <span className={cn(
-                            "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full",
-                            selectedField.required
-                              ? "bg-rose-100 text-rose-700"
-                              : "bg-slate-100 text-slate-600"
-                          )}>
-                            {selectedField.required ? '是' : '否'}
-                          </span>
-                        </div>
+                        {editingFieldId ? (
+                          <div className="mt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setEditFieldForm(prev => ({ ...prev, required: !prev.required }))}
+                              className={cn(
+                                "relative w-11 h-6 rounded-full transition-colors",
+                                editFieldForm.required ? "bg-indigo-600" : "bg-slate-200"
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform",
+                                  editFieldForm.required ? "translate-x-5" : "translate-x-0"
+                                )}
+                              />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="mt-1.5">
+                            <span className={cn(
+                              "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full",
+                              selectedField.required
+                                ? "bg-rose-100 text-rose-700"
+                                : "bg-slate-100 text-slate-600"
+                            )}>
+                              {selectedField.required ? '是' : '否'}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -497,32 +635,60 @@ export default function Dictionary() {
                       <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
                         所属分类
                       </label>
-                      <div className="mt-1.5 text-sm text-slate-700">
-                        {selectedField.category}
-                      </div>
+                      {editingFieldId ? (
+                        <input
+                          type="text"
+                          value={editFieldForm.category || ''}
+                          onChange={(e) => setEditFieldForm(prev => ({ ...prev, category: e.target.value }))}
+                          className="mt-1.5 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all"
+                        />
+                      ) : (
+                        <div className="mt-1.5 text-sm text-slate-700">
+                          {selectedField.category}
+                        </div>
+                      )}
                     </div>
 
                     <div>
                       <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
                         字段描述
                       </label>
-                      <div className="mt-1.5 text-sm text-slate-600 leading-relaxed">
-                        {selectedField.description}
-                      </div>
+                      {editingFieldId ? (
+                        <textarea
+                          value={editFieldForm.description || ''}
+                          onChange={(e) => setEditFieldForm(prev => ({ ...prev, description: e.target.value }))}
+                          rows={3}
+                          className="mt-1.5 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all resize-none"
+                        />
+                      ) : (
+                        <div className="mt-1.5 text-sm text-slate-600 leading-relaxed">
+                          {selectedField.description}
+                        </div>
+                      )}
                     </div>
 
-                    {selectedField.defaultValue !== undefined && (
-                      <div>
-                        <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                          默认值
-                        </label>
-                        <div className="mt-1.5">
-                          <code className="px-2.5 py-1 text-xs bg-slate-100 text-slate-700 rounded-md font-mono">
-                            {selectedField.defaultValue}
-                          </code>
-                        </div>
-                      </div>
-                    )}
+                    <div>
+                      <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                        默认值 {editingFieldId && <span className="text-slate-400 font-normal normal-case">（可选）</span>}
+                      </label>
+                      {editingFieldId ? (
+                        <input
+                          type="text"
+                          value={editFieldForm.defaultValue || ''}
+                          onChange={(e) => setEditFieldForm(prev => ({ ...prev, defaultValue: e.target.value }))}
+                          placeholder="请输入默认值"
+                          className="mt-1.5 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all"
+                        />
+                      ) : (
+                        selectedField.defaultValue !== undefined && (
+                          <div className="mt-1.5">
+                            <code className="px-2.5 py-1 text-xs bg-slate-100 text-slate-700 rounded-md font-mono">
+                              {selectedField.defaultValue}
+                            </code>
+                          </div>
+                        )
+                      )}
+                    </div>
 
                     {selectedField.relatedMetrics.length > 0 && (
                       <div>
@@ -560,45 +726,102 @@ export default function Dictionary() {
                       <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
                         指标名称
                       </label>
-                      <div className="mt-1.5 flex items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-800">
-                          {selectedMetric.name}
-                        </span>
-                        {selectedMetric.unit && (
-                          <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-full">
-                            {selectedMetric.unit}
+                      {editingMetricId ? (
+                        <input
+                          type="text"
+                          value={editMetricForm.name || ''}
+                          onChange={(e) => setEditMetricForm(prev => ({ ...prev, name: e.target.value }))}
+                          className="mt-1.5 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all"
+                        />
+                      ) : (
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-800">
+                            {selectedMetric.name}
                           </span>
-                        )}
-                      </div>
+                          {selectedMetric.unit && (
+                            <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-full">
+                              {selectedMetric.unit}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div>
                       <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
                         所属分类
                       </label>
-                      <div className="mt-1.5 text-sm text-slate-700">
-                        {selectedMetric.category}
-                      </div>
+                      {editingMetricId ? (
+                        <input
+                          type="text"
+                          value={editMetricForm.category || ''}
+                          onChange={(e) => setEditMetricForm(prev => ({ ...prev, category: e.target.value }))}
+                          className="mt-1.5 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all"
+                        />
+                      ) : (
+                        <div className="mt-1.5 text-sm text-slate-700">
+                          {selectedMetric.category}
+                        </div>
+                      )}
                     </div>
 
                     <div>
                       <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
                         计算公式
                       </label>
-                      <div className="mt-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                        <code className="text-xs text-slate-700 font-mono break-all">
-                          {selectedMetric.formula}
-                        </code>
-                      </div>
+                      {editingMetricId ? (
+                        <input
+                          type="text"
+                          value={editMetricForm.formula || ''}
+                          onChange={(e) => setEditMetricForm(prev => ({ ...prev, formula: e.target.value }))}
+                          className="mt-1.5 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all font-mono"
+                        />
+                      ) : (
+                        <div className="mt-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                          <code className="text-xs text-slate-700 font-mono break-all">
+                            {selectedMetric.formula}
+                          </code>
+                        </div>
+                      )}
                     </div>
 
                     <div>
                       <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
                         业务含义
                       </label>
-                      <div className="mt-1.5 text-sm text-slate-600 leading-relaxed">
-                        {selectedMetric.meaning}
-                      </div>
+                      {editingMetricId ? (
+                        <textarea
+                          value={editMetricForm.meaning || ''}
+                          onChange={(e) => setEditMetricForm(prev => ({ ...prev, meaning: e.target.value }))}
+                          rows={3}
+                          className="mt-1.5 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all resize-none"
+                        />
+                      ) : (
+                        <div className="mt-1.5 text-sm text-slate-600 leading-relaxed">
+                          {selectedMetric.meaning}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                        单位 {editingMetricId && <span className="text-slate-400 font-normal normal-case">（可选）</span>}
+                      </label>
+                      {editingMetricId ? (
+                        <input
+                          type="text"
+                          value={editMetricForm.unit || ''}
+                          onChange={(e) => setEditMetricForm(prev => ({ ...prev, unit: e.target.value }))}
+                          placeholder="请输入单位，如：人、元、%"
+                          className="mt-1.5 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all"
+                        />
+                      ) : (
+                        selectedMetric.unit && (
+                          <div className="mt-1.5 text-sm text-slate-700">
+                            {selectedMetric.unit}
+                          </div>
+                        )
+                      )}
                     </div>
 
                     <div>
